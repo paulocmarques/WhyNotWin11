@@ -1,4 +1,4 @@
-2.4.2.0
+2.5.0.0
 Atom(R) x6200FE
 Atom(R) x6211E
 Atom(R) x6212RE
@@ -44,6 +44,7 @@ Celeron(R) N4100
 Celeron(R) N4120
 Celeron(R) N4500
 Celeron(R) N4505
+Celeron(R) N5095
 Celeron(R) N5100
 Celeron(R) N5105
 Celeron(R) N6210
@@ -146,6 +147,8 @@ Core(TM) i5-11600
 Core(TM) i5-11600K
 Core(TM) i5-11600KF
 Core(TM) i5-11600T
+Core(TM) i5-12600K
+Core(TM) i5-12600KF
 Core(TM) i5-8200Y
 Core(TM) i5-8210Y
 Core(TM) i5-8250U
@@ -225,6 +228,8 @@ Core(TM) i7-1185G7
 Core(TM) i7-1185G7E
 Core(TM) i7-1185GRE
 Core(TM) i7-1195G7
+Core(TM) i7-12700K
+Core(TM) i7-12700KF
 Core(TM) i7-7800X
 Core(TM) i7-7820HQ
 Core(TM) i7-7820X
@@ -283,6 +288,8 @@ Core(TM) i9-11900KF
 Core(TM) i9-11900T
 Core(TM) i9-11950H
 Core(TM) i9-11980HK
+Core(TM) i9-12900K
+Core(TM) i9-12900KF
 Core(TM) i9-7900X
 Core(TM) i9-7920X
 Core(TM) i9-7940X
@@ -484,6 +491,7 @@ Xeon(R) Platinum 8160T
 Xeon(R) Platinum 8164
 Xeon(R) Platinum 8168
 Xeon(R) Platinum 8170
+Xeon(R) Platinum 8171M
 Xeon(R) Platinum 8176
 Xeon(R) Platinum 8176F
 Xeon(R) Platinum 8180
@@ -494,6 +502,7 @@ Xeon(R) Platinum 8260L
 Xeon(R) Platinum 8260Y
 Xeon(R) Platinum 8268
 Xeon(R) Platinum 8270
+Xeon(R) Platinum 8272CL
 Xeon(R) Platinum 8276
 Xeon(R) Platinum 8276L
 Xeon(R) Platinum 8280

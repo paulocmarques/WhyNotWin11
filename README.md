@@ -9,7 +9,7 @@
 # WhyNotWin11
 Detection Script to help identify why your PC isn't Windows 11 Release Ready.
 
-![image](https://user-images.githubusercontent.com/716581/131174566-e5180290-0ad6-468c-b601-9ba0fafe24cb.png)
+![image](https://user-images.githubusercontent.com/716581/145863198-8a94eb72-4a68-4b0d-afef-f2ebc391ccdc.png)
 ----
 
 ## Download
@@ -30,6 +30,8 @@ Disk (Storage)|5MB Free|100MB Free
 Limitations|DirectX 12 Check Inaccurate|None
 
 \* WhyNotWin11 can be forced to run on Unsupported Systems using the `/force` parameter, no support will be given for this parameter.
+
+Other operating systems are unsupported, last version known to run on Wine is 2.3.0.5.
 
 ## Compiling
 
