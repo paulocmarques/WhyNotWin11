@@ -6,9 +6,9 @@
 #AutoIt3Wrapper_UseX64=Y
 #AutoIt3Wrapper_Res_Comment=https://www.whynotwin11.org
 #AutoIt3Wrapper_Res_Description=Detection Script to help identify why your PC isn't Windows 11 Release Ready
-#AutoIt3Wrapper_Res_Fileversion=2.4.3.1
+#AutoIt3Wrapper_Res_Fileversion=2.4.3.2
 #AutoIt3Wrapper_Res_ProductName=WhyNotWin11
-#AutoIt3Wrapper_Res_ProductVersion=2.4.3.1
+#AutoIt3Wrapper_Res_ProductVersion=2.4.3.2
 #AutoIt3Wrapper_Res_LegalCopyright=Robert Maehl, using LGPL 3 License
 #AutoIt3Wrapper_Res_Language=1033
 #AutoIt3Wrapper_Res_requestedExecutionLevel=asInvoker
@@ -28,10 +28,17 @@
 #EndRegion ;**** Directives created by AutoIt3Wrapper_GUI ****
 
 Global $aFonts[5]
+Global $bWinPE = False
 Global $aColors[4] ; Convert to [4][8] for 2.0 themes
-Global $sVersion = "2.4.3.1"
 Global $sEdition = "Standard"
+Global $sVersion
 FileChangeDir(@SystemDir)
+
+If @Compiled Then
+	$sVersion = FileGetVersion(@ScriptFullPath)
+Else
+	$sVersion = "x.x.x.x"
+EndIf
 
 #include <File.au3>
 #include <Misc.au3>
@@ -78,6 +85,7 @@ ProcessCMDLine()
 
 Func ProcessCMDLine()
 	Local $aResults
+	Local $sDrive = Null
 	Local $bForce = False
 	Local $bSilent = False
 	Local $aOutput[3] = [False, "", ""]
@@ -104,7 +112,7 @@ Func ProcessCMDLine()
 					MsgBox(0, "Help and Flags", _
 							"Checks PC for Windows 11 Release Compatibility" & @CRLF & _
 							@CRLF & _
-							"WhyNotWin11 [/export FORMAT FILENAME [/silent]][/force][/update [branch]]" & @CRLF & _
+							"WhyNotWin11 [/export FORMAT FILENAME [/silent]][/drive DRIVE:][/force][/update [branch]]" & @CRLF & _
 							@CRLF & _
 							@TAB & "/export" & @TAB & "Export Results in an Available format, can be used" & @CRLF & _
 							@TAB & "       " & @TAB & "without the /silent flag for both GUI and file" & @CRLF & _
@@ -117,6 +125,19 @@ Func ProcessCMDLine()
 							@CRLF & _
 							"Refer to https://WhyNotWin11.org/wiki/Command-Line-Switches for more details" & @CRLF)
 					Exit 0
+				Case "/d", "/drive"
+					Select
+						Case UBound($CmdLine) <= 2
+							MsgBox(0, "Invalid", "Missing DRIVE: parameter for /drive." & @CRLF)
+							Exit 87 ; ERROR_INVALID_PARAMETER
+						Case StringLen($CmdLine[2]) <> 2
+							MsgBox(0, "Invalid", "Invalid DRIVE: parameter for /drive." & @CRLF)
+							Exit 87 ; ERROR_INVALID_PARAMETER
+						Case Else
+							$sDrive = $CmdLine[2]
+							$WINDOWS_DRIVE = $sDrive
+							_ArrayDelete($CmdLine, "1-2")
+					EndSelect
 				Case "/e", "/export", "/format"
 					Select
 						Case UBound($CmdLine) <= 3
@@ -191,19 +212,27 @@ Func ProcessCMDLine()
 				;;;
 		EndSwitch
 
-		If @OSBuild >= 22000 Or _WinAPI_GetProcAddress(_WinAPI_GetModuleHandle(@SystemDir & "\ntdll.dll"), "wine_get_host_version") Then
+		If @OSVersion = "WIN_11" Or _WinAPI_GetProcAddress(_WinAPI_GetModuleHandle(@SystemDir & "\ntdll.dll"), "wine_get_host_version") Then
 			If $bSilent Then
 				Exit 10 ; ERROR_BAD_ENVIRONMENT
 			Else
 				MsgBox($MB_ICONWARNING, _Translate(@MUILang, "Not Supported"), _Translate(@MUILang, "You're running the latest build!"))
 			EndIf
 		EndIf
+
+	EndIf
+
+	$bWinPE = RegRead("HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\WinPE", "Version")
+	If @error Then
+		$bWinPE = False
+	Else
+		If $sDrive = Null Then $WINDOWS_DRIVE = "C:"
 	EndIf
 	#EndRegion
 
 	If Not $bSilent And Not RegRead("HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Robert Maehl Software\WhyNotWin11", "NoProgress") Then ProgressOn($aName[1], _Translate(@MUILang, "Loading WMIC"))
 
-	$aResults = RunChecks()
+	$aResults = RunChecks($sDrive)
 
 	ProgressSet(80, "Done")
 
@@ -234,7 +263,7 @@ Func ProcessCMDLine()
 	Exit 0
 EndFunc   ;==>ProcessCMDLine
 
-Func RunChecks()
+Func RunChecks($sDrive = Null)
 
 	Local $aResults[11][3]
 
@@ -276,7 +305,7 @@ Func RunChecks()
 	$aResults[8][1] = @error
 	$aResults[8][2] = @extended
 
-	$aResults[9][0] = _SpaceCheck()
+	$aResults[9][0] = _SpaceCheck($sDrive)
 	$aResults[9][1] = @error
 	$aResults[9][2] = @extended
 
@@ -315,9 +344,10 @@ Func Main(ByRef $aResults, ByRef $aOutput)
 		For $iLoop = 1 To $aLangs[0] Step 1
 			$aLangs[$iLoop] &= " - " & IniRead(@LocalAppDataDir & "\WhyNotWin11\langs\" & $aLangs[$iLoop], "MetaData", "Language", "Unknown")
 		Next
-		_ArrayDelete($aLangs, 0)
+			_ArrayDelete($aLangs, 0)
+			_ArrayDelete($aLangs, 55) ;==> Remove the "Unknown" entry
 	EndIf
-
+	
 	Local $aThemes = _FileListToArray(@ScriptDir & "\", "*.def", $FLTA_FILES)
 	If Not @error Then
 		For $iLoop = 1 To $aThemes[0] Step 1
@@ -335,7 +365,7 @@ Func Main(ByRef $aResults, ByRef $aOutput)
 	#Region Sidebar
 	; Top Most Interaction for Update Text
 	Local $hUpdate = Default
-	If Not RegRead("HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Robert Maehl Software\WhyNotWin11", "NoUpdate") Then
+	If $bWinPE Or Not RegRead("HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Robert Maehl Software\WhyNotWin11", "NoUpdate") Then
 		$hUpdate = GUICtrlCreateLabel("", 0, 560, 90, 60, $SS_CENTER + $SS_CENTERIMAGE)
 		GUICtrlSetBkColor(-1, $aColors[$iSidebar])
 		GUICtrlSetCursor(-1, 0)
@@ -354,7 +384,7 @@ Func Main(ByRef $aResults, ByRef $aOutput)
 
 	; Top Most Interaction for Socials
 	Local $hGithub = Default, $hDonate = Default, $hDiscord = Default, $hLTT = Default, $hJob = Default
-	If Not RegRead("HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Robert Maehl Software\WhyNotWin11", "NoSocials") Then
+	If $bWinPE Or Not RegRead("HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Robert Maehl Software\WhyNotWin11", "NoSocials") Then
 		$hGithub = GUICtrlCreateLabel("", 34, 110, 32, 32)
 		GUICtrlSetTip(-1, "GitHub")
 		GUICtrlSetCursor(-1, 0)
@@ -395,7 +425,7 @@ Func Main(ByRef $aResults, ByRef $aOutput)
 	GUICtrlCreateLabel("", 0, 0, 100, 600)
 	GUICtrlSetBkColor(-1, $aColors[$iSidebar])
 
-	If Not RegRead("HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Robert Maehl Software\WhyNotWin11", "NoUpdate") Then
+	If $bWinPE Or Not RegRead("HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Robert Maehl Software\WhyNotWin11", "NoUpdate") Then
 		GUICtrlCreateLabel(_Translate($aMUI[1], "Check for Updates"), 0, 563, 100, 60, $SS_CENTER)
 		GUICtrlSetFont(-1, $aFonts[$FontSmall] * $DPI_RATIO, $FW_NORMAL, $GUI_FONTUNDER)
 		GUICtrlSetBkColor(-1, $aColors[$iSidebar])
@@ -405,7 +435,7 @@ Func Main(ByRef $aResults, ByRef $aOutput)
 
 	_GDIPlus_Startup()
 	If @Compiled Then
-		If Not RegRead("HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Robert Maehl Software\WhyNotWin11", "NoSocials") Then
+		If $bWinPE Or Not RegRead("HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Robert Maehl Software\WhyNotWin11", "NoSocials") Then
 			GUICtrlCreateIcon("", -1, 34, 110, 32, 32)
 			_SetBkSelfIcon(-1, $aColors[$iText], $aColors[$iSidebar], @ScriptFullPath, 201, 32, 32)
 			GUICtrlCreateIcon("", -1, 34, 160, 32, 32)
@@ -767,7 +797,9 @@ Func Main(ByRef $aResults, ByRef $aOutput)
 	If BitAND($dSettings, 1) = 1 Then
 		;;;
 	Else
-		GUICtrlCreateGroup("Info", 30, 20, 638, 100)
+		GUICtrlCreateGroup("", 30, 20, 638, 100)
+		GUICtrlCreateLabel(" " & _Translate($aMUI[1], "Info") & " ", 40, 20, 618, 20)
+		GUICtrlSetBkColor(-1, $GUI_BKCOLOR_TRANSPARENT)
 		If @Compiled Then
 			GUICtrlCreateIcon(@ScriptFullPath, 99, 50, 30, 40, 40)
 		Else
@@ -775,20 +807,37 @@ Func Main(ByRef $aResults, ByRef $aOutput)
 		EndIf
 	EndIf
 
-	GUICtrlCreateGroup(_Translate($aMUI[1], "Settings"), 30, 180, 400, 328)
-
+	GUICtrlCreateGroup("", 30, 180, 400, 328)
+	GUICtrlCreateLabel(" " & _Translate($aMUI[1], "Settings") & " ", 40, 180, 380, 20)
+	GUICtrlSetBkColor(-1, $GUI_BKCOLOR_TRANSPARENT)
 	GUICtrlCreateLabel(_Translate($aMUI[1], "Language") & ":", 40, 200, 380, 20)
-	Local $hLanguage = GUICtrlCreateCombo("", 40, 220, 380, 20, $CBS_DROPDOWNLIST+$WS_VSCROLL)
-	If Not _ArrayToString($aLangs) = -1 Then GUICtrlSetData(-1, _ArrayToString($aLangs), $aMUI[1])
-	GUICtrlCreateLabel(_Translate($aMUI[1], "Translation by") & ":", 40, 250, 100, 20)
-	GUICtrlCreateLabel(_GetTranslationCredit($aMUI[1]), 140, 250, 280, 40, $SS_RIGHT)
+	Local $hLanguage = GUICtrlCreateCombo($alangs, 40, 220, 380, 20, $CBS_DROPDOWNLIST+$WS_VSCROLL)
+	If BitAND($dSettings, 4) = 4 Then
+		GUICtrlCreateLabel("Language Switcher currently disabled with Group Policy.", 40, 250, 380, 20)
+	Else
+		If IsArray($aLangs) Then GUICtrlSetData(-1, _ArrayToString($aLangs), $aMUI[1])
+	EndIf
+	If BitAND($dSettings, 8) = 8 Then
+		;;;
+	Else
+		GUICtrlCreateLabel(_Translate($aMUI[1], "Translation by") & ":", 40, 260, 100, 20)
+		GUICtrlCreateLabel(_GetTranslationCredit($aMUI[1]), 140, 260, 280, 40, $SS_RIGHT)
+	EndIf
 
 	GUICtrlCreateLabel(_Translate($aMUI[1], "Theme") & ":", 40, 290, 380, 20)
 	Local $hTheme = GUICtrlCreateCombo("", 40, 310, 380, 20, $CBS_DROPDOWNLIST+$WS_VSCROLL)
 	#forceref $hTheme
-	If Not _ArrayToString($aThemes) = -1 Then GUICtrlSetData(-1, _ArrayToString($aThemes))
-	GUICtrlCreateLabel(_Translate($aMUI[1], "Theme by") & ":", 40, 340, 100, 20)
-;	GUICtrlCreateLabel(_GetThemeCredit($sTheme), 140, 340, 280, 40, $SS_RIGHT)
+	If BitAND($dSettings, 16) = 16 Then
+		GUICtrlCreateLabel("Theme Switcher currently disabled with Group Policy.", 40, 340, 380, 20)
+	Else
+		If IsArray($aThemes) Then GUICtrlSetData(-1, _ArrayToString($aThemes))
+	EndIf
+	If BitAND($dSettings, 32) = 32 Then
+		;;;
+	Else
+		GUICtrlCreateLabel(_Translate($aMUI[1], "Theme by") & ":", 40, 360, 100, 20)
+;		GUICtrlCreateLabel(_GetThemeCredit($sTheme), 140, 340, 280, 40, $SS_RIGHT)
+	EndIf
 
 	;Local $hMUI = GUICtrlCreateCheckbox(_Translate($aMUI[1], "Remember Last Language Used"), 40, 380, 380, 20, $BS_RIGHTBUTTON)
 	;Local $hUOL = GUICtrlCreateCheckbox(_Translate($aMUI[1], "Check for Updates on App Launch"), 40, 400, 380, 20, $BS_RIGHTBUTTON)
@@ -799,7 +848,9 @@ Func Main(ByRef $aResults, ByRef $aOutput)
 	If BitAND($dSettings, 2) = 2 Then
 		;;;
 	Else
-		GUICtrlCreateGroup(_Translate($aMUI[1], "Guides"), 470, 180, 200, 328)
+		GUICtrlCreateGroup("", 470, 180, 200, 328)
+		GUICtrlCreateLabel(" " & _Translate($aMUI[1], "Guides") & " ", 480, 180, 180, 328)
+		GUICtrlSetBkColor(-1, $GUI_BKCOLOR_TRANSPARENT)
 		$hChecks = GUICtrlCreateButton(_Translate($aMUI[1],"Windows 11 Requirements"), 480, 200, 180, 40)
 		GUICtrlSetCursor(-1, 0)
 		$hConvert = GUICtrlCreateButton(_Translate($aMUI[1],"Convert Disk to GPT"), 480, 250, 180, 40)
