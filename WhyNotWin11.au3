@@ -5,10 +5,10 @@
 #AutoIt3Wrapper_Compile_Both=Y
 #AutoIt3Wrapper_UseX64=Y
 #AutoIt3Wrapper_Res_Comment=https://www.whynotwin11.org
-#AutoIt3Wrapper_Res_Description=Detection Script to help identify why your PC isn't Windows 11 Release Ready
-#AutoIt3Wrapper_Res_Fileversion=2.4.3.2
+#AutoIt3Wrapper_Res_Description=Detection Script to help identify why your PC isn't Windows 11 Release Ready. Now Supporting Update Checks!
+#AutoIt3Wrapper_Res_Fileversion=2.5.0.4
 #AutoIt3Wrapper_Res_ProductName=WhyNotWin11
-#AutoIt3Wrapper_Res_ProductVersion=2.4.3.2
+#AutoIt3Wrapper_Res_ProductVersion=2.5.0.4
 #AutoIt3Wrapper_Res_LegalCopyright=Robert Maehl, using LGPL 3 License
 #AutoIt3Wrapper_Res_Language=1033
 #AutoIt3Wrapper_Res_requestedExecutionLevel=asInvoker
@@ -20,6 +20,7 @@
 #AutoIt3Wrapper_Res_Icon_Add=Assets\HireMe.ico
 #AutoIt3Wrapper_Res_Icon_Add=Assets\Settings.ico
 #AutoIt3Wrapper_Res_Icon_Add=Assets\Info.ico
+#AutoIt3Wrapper_Res_Icon_Add=Assets\WhyNotWin11.ico
 #AutoIt3Wrapper_AU3Check_Parameters=-d -w 1 -w 2 -w 3 -w 4 -w 5 -w 6 -w 7 -v1 -v2 -v3
 #AutoIt3Wrapper_Run_Tidy=n
 #Tidy_Parameters=/tc 0 /serc /scec
@@ -33,6 +34,7 @@ Global $aColors[4] ; Convert to [4][8] for 2.0 themes
 Global $sEdition = "Standard"
 Global $sVersion
 FileChangeDir(@SystemDir)
+Global Static $aPass[2] = [Null, ""] ; Forced, Pass Symbol
 
 If @Compiled Then
 	$sVersion = FileGetVersion(@ScriptFullPath)
@@ -61,6 +63,7 @@ EndIf
 
 Global $WINDOWS_DRIVE = EnvGet("SystemDrive")
 
+Global $bWin11 = False
 Global Static $aMUI[2] = [Null, @MUILang] ; Forced, MUI Lang
 Global Static $aName[2] = [Null, "WhyNotWin11"] ; Forced, AppName
 
@@ -85,6 +88,8 @@ ProcessCMDLine()
 
 Func ProcessCMDLine()
 	Local $aResults
+	Local $aExtended
+
 	Local $sDrive = Null
 	Local $bForce = False
 	Local $bSilent = False
@@ -101,6 +106,12 @@ Func ProcessCMDLine()
 		$aName[1] = RegRead("HKEY_LOCAL_MACHINE\Software\Policies\Robert Maehl Software\WhyNotWin11", "SetAppName")
 		$aName[0] = $aName[1] ? True : False
 		If Not $aName[0] Then $aName[1] = "WhyNotWin11"
+	EndIf
+
+	If $aPass[0] = Null Then
+		$aPass[1] = RegRead("HKEY_LOCAL_MACHINE\Software\Policies\Robert Maehl Software\WhyNotWin11", "SetPassedSymbol")
+		$aPass[0] = $aPass[1] ? True : False
+		If Not $aPass[0] Then $aPass[1] = ""
 	EndIf
 
 	If RegRead("HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Robert Maehl Software\WhyNotWin11", "NoAppName") Then $aName[1] = ""
@@ -208,11 +219,13 @@ Func ProcessCMDLine()
 				Else
 					MsgBox($MB_ICONWARNING, _Translate(@MUILang, "Warning"), StringReplace(_Translate(@MUILang, "May Report DirectX 12 Incorrectly"), '#', @OSVersion))
 				EndIf
+			Case "WIN_11"
+				$bWin11 = True
 			Case Else
 				;;;
 		EndSwitch
 
-		If @OSVersion = "WIN_11" Or _WinAPI_GetProcAddress(_WinAPI_GetModuleHandle(@SystemDir & "\ntdll.dll"), "wine_get_host_version") Then
+		If _WinAPI_GetProcAddress(_WinAPI_GetModuleHandle(@SystemDir & "\ntdll.dll"), "wine_get_host_version") Then
 			If $bSilent Then
 				Exit 10 ; ERROR_BAD_ENVIRONMENT
 			Else
@@ -233,6 +246,7 @@ Func ProcessCMDLine()
 	If Not $bSilent And Not RegRead("HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Robert Maehl Software\WhyNotWin11", "NoProgress") Then ProgressOn($aName[1], _Translate(@MUILang, "Loading WMIC"))
 
 	$aResults = RunChecks($sDrive)
+	$aExtended = RunExtendedChecks($sDrive)
 
 	ProgressSet(80, "Done")
 
@@ -250,7 +264,7 @@ Func ProcessCMDLine()
 		$aColors = _SetTheme()
 		$aFonts = _GetTranslationFonts($aMUI[1])
 
-		Main($aResults, $aOutput)
+		Main($aResults, $aExtended, $aOutput)
 	Else
 		Do
 			FinalizeResults($aResults)
@@ -275,7 +289,7 @@ Func RunChecks($sDrive = Null)
 	$aResults[1][1] = @error
 	$aResults[1][2] = @extended
 
-	$aResults[2][0] = _CPUNameCheck(_GetCPUInfo(2), _GetCPUInfo(5))
+	$aResults[2][0] = _CPUNameCheck(_GetCPUInfo(2), _GetCPUInfo(6), _GetCPUInfo(5))
 	$aResults[2][1] = @error
 	$aResults[2][2] = @extended
 
@@ -317,7 +331,54 @@ Func RunChecks($sDrive = Null)
 
 EndFunc   ;==>RunChecks
 
-Func Main(ByRef $aResults, ByRef $aOutput)
+Func RunExtendedChecks($sDrive = Null)
+
+	Local $aResults[11][3]
+
+	$aResults[2][0] = _CPUNameCheck(_GetCPUInfo(2), _GetCPUInfo(6), _GetCPUInfo(5), True)
+	$aResults[2][1] = @error
+	$aResults[2][2] = @extended
+
+	$aResults[7][0] = _MemCheck(True)
+	$aResults[7][1] = @error
+	$aResults[7][2] = @extended
+
+	$aResults[8][0] = _SecureBootCheck(True)
+	$aResults[8][1] = @error
+	$aResults[8][2] = @extended
+
+	$aResults[9][0] = _SpaceCheck($sDrive, True)
+	$aResults[9][1] = @error
+	$aResults[9][2] = @extended
+
+	$aResults[10][0] = _TPMCheck(True)
+	$aResults[10][1] = @error
+	$aResults[10][2] = @extended
+
+	Return $aResults
+
+EndFunc
+
+Func RunCheckValidation($aInitial, $aExtended)
+
+	Local $bMismatch = False
+
+	For $iLoop = 0 To 10 Step 1
+		Switch $iLoop
+			Case 2, 7 to 10
+				If Not $aExtended[$iLoop][1] Then
+					If $aExtended[$iLoop][0] <> $aInitial[$iLoop][0] Then $bMismatch = True
+				EndIf
+			Case Else
+				;;;
+		EndSwitch
+	Next
+
+	Return Not $bMismatch
+
+EndFunc
+
+Func Main(ByRef $aResults, ByRef $aExtended, ByRef $aOutput)
 
 	; Disable Scaling
 	If @OSVersion = 'WIN_10' Then DllCall(@SystemDir & "\User32.dll", "bool", "SetProcessDpiAwarenessContext", "HWND", "DPI_AWARENESS_CONTEXT" - 1)
@@ -347,7 +408,7 @@ Func Main(ByRef $aResults, ByRef $aOutput)
 			_ArrayDelete($aLangs, 0)
 			_ArrayDelete($aLangs, 55) ;==> Remove the "Unknown" entry
 	EndIf
-	
+
 	Local $aThemes = _FileListToArray(@ScriptDir & "\", "*.def", $FLTA_FILES)
 	If Not @error Then
 		For $iLoop = 1 To $aThemes[0] Step 1
@@ -455,6 +516,8 @@ Func Main(ByRef $aResults, ByRef $aOutput)
 			GUICtrlCreateIcon("", -1, 34, 518, 32, 32)
 			_SetBkSelfIcon(-1, $aColors[$iText], $aColors[$iSidebar], @ScriptFullPath, 206, 32, 32)
 		EndIf
+		GUICtrlCreateIcon("", -1, 42, 20, 20, 20)
+		_SetBkSelfIcon(-1, $aColors[$iText], $aColors[$iSidebar], @ScriptFullPath, 207, 20, 20)
 	Else
 		If Not RegRead("HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Robert Maehl Software\WhyNotWin11", "NoSocials") Then
 			GUICtrlCreateIcon("", -1, 34, 110, 32, 32)
@@ -476,15 +539,20 @@ Func Main(ByRef $aResults, ByRef $aOutput)
 			GUICtrlCreateIcon("", -1, 34, 518, 32, 32)
 			_SetBkIcon(-1, $aColors[$iText], $aColors[$iSidebar], @ScriptDir & ".\assets\Settings.ico", -1, 32, 32)
 		EndIf
+		GUICtrlCreateIcon("", -1, 42, 20, 20, 20)
+		_SetBkIcon(-1, $aColors[$iText], $aColors[$iSidebar], @ScriptDir & "\assets\WhyNotWin11.ico", -1, 20, 20)
+	EndIf
+
+	If Not RegRead("HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Robert Maehl Software\WhyNotWin11", "NoAppName") Then
+		GUICtrlCreateIcon(@ScriptDir & "\assets\WhyNotWin11.ico", -1, 42, 20, 20, 20)
+		GUICtrlSetBkColor(-1, $aColors[$iSidebar])
+		GUICtrlCreateLabel($aName[1], 10, 40, 80, 20, $SS_CENTER + $SS_CENTERIMAGE)
+		GUICtrlSetBkColor(-1, $aColors[$iSidebar])
+		GUICtrlCreateLabel("v " & $sVersion, 10, 60, 80, 20, $SS_CENTER + $SS_CENTERIMAGE)
+		GUICtrlSetBkColor(-1, $aColors[$iSidebar])
 	EndIf
 	_GDIPlus_Shutdown()
 
-	If Not RegRead("HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Robert Maehl Software\WhyNotWin11", "NoAppName") Then
-		GUICtrlCreateLabel($aName[1], 10, 10, 80, 20, $SS_CENTER + $SS_CENTERIMAGE)
-		GUICtrlSetBkColor(-1, $aColors[$iSidebar])
-		GUICtrlCreateLabel("v " & $sVersion, 10, 30, 80, 20, $SS_CENTER + $SS_CENTERIMAGE)
-		GUICtrlSetBkColor(-1, $aColors[$iSidebar])
-	EndIf
 	#EndRegion
 
 	#Region Footer
@@ -508,6 +576,8 @@ Func Main(ByRef $aResults, ByRef $aOutput)
 
 	GUICtrlCreateLabel(@ComputerName, 113, 560, 300, 20, $SS_CENTERIMAGE)
 	GUICtrlSetBkColor(-1, $aColors[$iFooter])
+	GUICtrlCreateLabel(_GetMotherboardInfo(0) & " " & _GetMotherboardInfo(1), 113, 580, 300, 20, $SS_CENTERIMAGE)
+	GUICtrlSetBkColor(-1, $aColors[$iFooter])
 	GUICtrlCreateLabel(_GetCPUInfo(2), 450, 560, 300, 20, $SS_CENTERIMAGE)
 	GUICtrlSetBkColor(-1, $aColors[$iFooter])
 	GUICtrlCreateLabel(_GetGPUInfo(0), 450, 580, 300, 20, $SS_CENTERIMAGE)
@@ -523,10 +593,6 @@ Func Main(ByRef $aResults, ByRef $aOutput)
 	GUICtrlSetFont(-1, $aFonts[$FontMedium] * $DPI_RATIO)
 	GUICtrlSetCursor(-1, 0)
 	#ce
-
-	GUICtrlCreateLabel("* " & _Translate($aMUI[1], "Results based on currently known requirements!"), 130, 45, 640, 20, $SS_CENTER + $SS_CENTERIMAGE)
-	GUICtrlSetColor(-1, 0xE20012)
-	GUICtrlSetFont(-1, $aFonts[$FontMedium] * $DPI_RATIO)
 
 	GUICtrlCreateLabel(ChrW(0x274C), 765, 5, 30, 30, $SS_CENTER + $SS_CENTERIMAGE)
 	GUICtrlSetFont(-1, $aFonts[$FontLarge] * $DPI_RATIO, $FW_NORMAL)
@@ -553,14 +619,12 @@ Func Main(ByRef $aResults, ByRef $aOutput)
 
 	_GDIPlus_Startup()
 	For $iRow = 0 To 10 Step 1
-		;		GUICtrlCreateLabel("", 113, 113 + $iRow * 40, 637, 32)
-		;		GUICtrlSetBkColor(-1, $aColors[$iFooter])
-		$hCheck[$iRow][0] = GUICtrlCreateLabel("…", 113, 110 + $iRow * 40, 40, 40, $SS_CENTER + $SS_SUNKEN + $SS_CENTERIMAGE)
+		$hCheck[$iRow][0] = GUICtrlCreateLabel("…", 113, 70 + $iRow * 44, 40, 40, $SS_CENTER + $SS_SUNKEN + $SS_CENTERIMAGE) 
 		GUICtrlSetBkColor(-1, $aColors[$iBackground])
-		GUICtrlCreateIcon("", -1, 763, 118 + $iRow * 40, 24, 40)
-		$hCheck[$iRow][1] = GUICtrlCreateLabel(" " & _Translate($aMUI[1], $hLabel[$iRow]), 153, 110 + $iRow * 40, 297, 40, $SS_CENTERIMAGE)
+		GUICtrlCreateIcon("", -1, 763, 78 + $iRow * 44, 24, 40)
+		$hCheck[$iRow][1] = GUICtrlCreateLabel(" " & _Translate($aMUI[1], $hLabel[$iRow]), 153, 70 + $iRow * 44, 297, 40, $SS_CENTERIMAGE)
 		GUICtrlSetFont(-1, $aFonts[$FontLarge] * $DPI_RATIO, $FW_NORMAL)
-		$hCheck[$iRow][2] = GUICtrlCreateLabel(_Translate($aMUI[1], "Checking..."), 450, 110 + $iRow * 40, 300, 40, $SS_SUNKEN)
+		$hCheck[$iRow][2] = GUICtrlCreateLabel(_Translate($aMUI[1], "Checking..."), 450, 70 + $iRow * 44, 300, 40, $SS_SUNKEN)
 		Switch $iRow
 			Case 0, 3, 9
 				GUICtrlSetStyle(-1, $SS_CENTER + $SS_SUNKEN)
@@ -569,7 +633,7 @@ Func Main(ByRef $aResults, ByRef $aOutput)
 		EndSwitch
 		GUICtrlSetFont(-1, $aFonts[$FontMedium] * $DPI_RATIO, $FW_SEMIBOLD)
 		If Not $bInfoBox Then
-			GUICtrlCreateIcon("", -1, 763, 118 + $iRow * 40, 24, 40)
+			GUICtrlCreateIcon("", -1, 763, 78 + $iRow * 44, 24, 40)
 			If @Compiled Then
 				_SetBkSelfIcon(-1, $aColors[$iText], $aColors[$iBackground], @ScriptFullPath, 207, 24, 24)
 			Else
@@ -592,7 +656,7 @@ Func Main(ByRef $aResults, ByRef $aOutput)
 					GUICtrlSetData($hCheck[0][2], _Translate($aMUI[1], "Check Skipped"))
 				Case 1
 					_GUICtrlSetState($hCheck[0][0], $iWarn)
-					GUICtrlSetData($hCheck[0][2], _Translate($aMUI[1], "64 Bit CPU") & @CRLF & _Translate($aMUI[1], "32 bit OS"))
+					GUICtrlSetData($hCheck[0][2], _Translate($aMUI[1], "64 Bit CPU") & @CRLF & _Translate($aMUI[1], "32 Bit OS"))
 				Case 2
 					_GUICtrlSetState($hCheck[0][0], $iFail)
 					GUICtrlSetData($hCheck[0][2], _Translate($aMUI[1], "32 Bit CPU") & @CRLF & _Translate($aMUI[1], "32 Bit OS"))
@@ -621,23 +685,28 @@ Func Main(ByRef $aResults, ByRef $aOutput)
 	#EndRegion
 
 	#Region ; _CPUNameCheck()
-	Switch $aResults[2][0]
-		Case False
-			Switch $aResults[2][1]
-				Case 1
-					_GUICtrlSetState($hCheck[2][0], $iWarn)
-					GUICtrlSetData($hCheck[2][2], _Translate($aMUI[1], "Unable to Check List"))
-				Case 2
-					_GUICtrlSetState($hCheck[2][0], $iWarn)
-					GUICtrlSetData($hCheck[2][2], _Translate($aMUI[1], "Error Accessing List"))
-				Case 3
-					_GUICtrlSetState($hCheck[2][0], $iFail)
-					GUICtrlSetData($hCheck[2][2], _Translate($aMUI[1], "Not Supported"))
-			EndSwitch
-		Case Else
-			_GUICtrlSetState($hCheck[2][0], $iPass)
-			GUICtrlSetData($hCheck[2][2], _Translate($aMUI[1], "Listed as Compatible"))
-	EndSwitch
+	If $aExtended[2][0] Then
+		_GUICtrlSetState($hCheck[2][0], $iPass)
+		GUICtrlSetData($hCheck[2][2], _Translate($aMUI[1], "Listed as Compatible"))
+	Else
+		Switch $aResults[2][0]
+			Case False
+				Switch $aResults[2][1]
+					Case 1
+						_GUICtrlSetState($hCheck[2][0], $iWarn)
+						GUICtrlSetData($hCheck[2][2], _Translate($aMUI[1], "Unable to Check List"))
+					Case 2
+						_GUICtrlSetState($hCheck[2][0], $iWarn)
+						GUICtrlSetData($hCheck[2][2], _Translate($aMUI[1], "Error Accessing List"))
+					Case 3
+						_GUICtrlSetState($hCheck[2][0], $iFail)
+						GUICtrlSetData($hCheck[2][2], _Translate($aMUI[1], "Not Supported"))
+				EndSwitch
+			Case Else
+				_GUICtrlSetState($hCheck[2][0], $iPass)
+				GUICtrlSetData($hCheck[2][2], _Translate($aMUI[1], "Listed as Compatible"))
+		EndSwitch
+	EndIf
 	#EndRegion
 
 	#Region ; _CPUCoresCheck()
@@ -813,24 +882,34 @@ Func Main(ByRef $aResults, ByRef $aOutput)
 	GUICtrlCreateLabel(_Translate($aMUI[1], "Language") & ":", 40, 200, 380, 20)
 	Local $hLanguage = GUICtrlCreateCombo($alangs, 40, 220, 380, 20, $CBS_DROPDOWNLIST+$WS_VSCROLL)
 	If BitAND($dSettings, 4) = 4 Then
-		GUICtrlCreateLabel("Language Switcher currently disabled with Group Policy.", 40, 250, 380, 20)
+		GUICtrlCreateLabel(_Translate($aMUI[1], "Language Switcher currently disabled with Group Policy."), 40, 240, 380, 20)
 	Else
-		If IsArray($aLangs) Then GUICtrlSetData(-1, _ArrayToString($aLangs), $aMUI[1])
+		If IsArray($aLangs) Then
+			GUICtrlSetData(-1, _ArrayToString($aLangs), $aMUI[1])
+		Else
+			GUICtrlSetData(-1, "English - No Alternative Language Files Found", "English - No Alternative Language Files Found")
+			GUICtrlSetState(-1, $GUI_DISABLE)
+		EndIf
 	EndIf
 	If BitAND($dSettings, 8) = 8 Then
 		;;;
 	Else
-		GUICtrlCreateLabel(_Translate($aMUI[1], "Translation by") & ":", 40, 260, 100, 20)
-		GUICtrlCreateLabel(_GetTranslationCredit($aMUI[1]), 140, 260, 280, 40, $SS_RIGHT)
+	GUICtrlCreateLabel(_Translate($aMUI[1], "Translation by") & ":", 40, 260, 100, 20)
+	GUICtrlCreateLabel(_GetTranslationCredit($aMUI[1]), 140, 260, 280, 40, $SS_RIGHT)
 	EndIf
 
 	GUICtrlCreateLabel(_Translate($aMUI[1], "Theme") & ":", 40, 290, 380, 20)
 	Local $hTheme = GUICtrlCreateCombo("", 40, 310, 380, 20, $CBS_DROPDOWNLIST+$WS_VSCROLL)
 	#forceref $hTheme
 	If BitAND($dSettings, 16) = 16 Then
-		GUICtrlCreateLabel("Theme Switcher currently disabled with Group Policy.", 40, 340, 380, 20)
+		GUICtrlCreateLabel(_Translate($aMUI[1], "Theme Switcher currently disabled with Group Policy."), 40, 340, 380, 20)
 	Else
-		If IsArray($aThemes) Then GUICtrlSetData(-1, _ArrayToString($aThemes))
+		If IsArray($aThemes) Then
+			GUICtrlSetData(-1, _ArrayToString($aThemes))
+		Else
+			GUICtrlSetData(-1, _Translate($aMUI[1], "Default - No Theme Files Found"), _Translate($aMUI[1], "Default - No Theme Files Found"))
+			GUICtrlSetState(-1, $GUI_DISABLE)
+		EndIf
 	EndIf
 	If BitAND($dSettings, 32) = 32 Then
 		;;;
@@ -849,7 +928,7 @@ Func Main(ByRef $aResults, ByRef $aOutput)
 		;;;
 	Else
 		GUICtrlCreateGroup("", 470, 180, 200, 328)
-		GUICtrlCreateLabel(" " & _Translate($aMUI[1], "Guides") & " ", 480, 180, 180, 328)
+		GUICtrlCreateLabel(" " & _Translate($aMUI[1], "Guides") & " ", 480, 180, 180, 20)
 		GUICtrlSetBkColor(-1, $GUI_BKCOLOR_TRANSPARENT)
 		$hChecks = GUICtrlCreateButton(_Translate($aMUI[1],"Windows 11 Requirements"), 480, 200, 180, 40)
 		GUICtrlSetCursor(-1, 0)
@@ -928,6 +1007,7 @@ Func Main(ByRef $aResults, ByRef $aOutput)
 				EndSwitch
 				If Not RegRead("HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Robert Maehl Software\WhyNotWin11", "NoPopUp") Then
 					For $iLoop = 0 To 10 Step 1
+						If $iLoop = 2 And $aExtended[$iLoop][0] = True Then ContinueLoop ; Pass if Windows Update Reports CPU Okay
 						If $aResults[$iLoop][0] = False Or $aResults[$iLoop][0] < 1 Then
 							MsgBox($MB_OK+$MB_ICONERROR+$MB_TOPMOST+$MB_SETFOREGROUND, _
 								_Translate($aMUI[1], "Not Supported"), _
@@ -935,22 +1015,28 @@ Func Main(ByRef $aResults, ByRef $aOutput)
 							ContinueLoop 2
 						EndIf
 					Next
-					MsgBox($MB_OK+$MB_ICONINFORMATION+$MB_TOPMOST+$MB_SETFOREGROUND, _
-						_Translate($aMUI[1], "Supported"), _
-						_Translate($aMUI[1], "Your Computer is ready for Windows 11. You should receive the option to upgrade between October 5th 2021 and Fall 2022."))
+					If Not RunCheckValidation($aResults, $aExtended) Then
+						MsgBox($MB_OK+$MB_ICONWARNING+$MB_TOPMOST+$MB_SETFOREGROUND, _
+							_Translate($aMUI[1], "Supported"), _
+							_Translate($aMUI[1], "Your Computer is ready for Windows 11 and its updates, but Windows Update may you are not for 30 days. You can fix this using the Windows Installation Assistant."))
+					Else
+						MsgBox($MB_OK+$MB_ICONINFORMATION+$MB_TOPMOST+$MB_SETFOREGROUND, _
+							_Translate($aMUI[1], "Supported"), _
+							_Translate($aMUI[1], "Your Computer is ready for Windows 11 and its updates."))
+					EndIf
 				EndIf
 
 			Case $hMsg = $hLanguage
 				If StringLeft(GUICtrlRead($hLanguage), 4) <> $aMUI[1] Then
 					$aMUI[1] = StringLeft(GUICtrlRead($hLanguage), 4)
 					GUIDelete($hGUI)
-					Main($aResults, $aOutput)
+					Main($aResults, $aExtended, $aOutput)
 				EndIf
 
 			Case $hMsg = $hTheme
 				$aColors = _SetTheme(StringSplit(GUICtrlRead($hTheme), " - ")[1])
 				GUIDelete($hGUI)
-				Main($aResults, $aOutput)
+				Main($aResults, $aExtended, $aOutput)
 
 			Case $hMsg = $hDumpLang
 				FileDelete(@LocalAppDataDir & "\WhyNotWin11\langs\")
@@ -1202,10 +1288,10 @@ EndFunc   ;==>_SetBannerText
 Func _GUICtrlSetState($hCtrl, $iState)
 	Switch $iState
 		Case 0
-			GUICtrlSetData($hCtrl, "X") ; Failed
+			GUICtrlSetData($hCtrl, "❌") ; Failed
 			GUICtrlSetBkColor($hCtrl, 0xFA113D)
 		Case 1
-			GUICtrlSetData($hCtrl, "") ; Passed
+			GUICtrlSetData($hCtrl, $aPass[1]) ; Passed
 			GUICtrlSetBkColor($hCtrl, 0x4CC355)
 		Case 2
 			GUICtrlSetData($hCtrl, "?") ; Unsure
