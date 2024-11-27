@@ -5,10 +5,11 @@
 #AutoIt3Wrapper_Compile_Both=Y
 #AutoIt3Wrapper_UseX64=Y
 #AutoIt3Wrapper_Res_Comment=https://www.whynotwin11.org
+#AutoIt3Wrapper_Res_CompanyName=Robert Maehl Software
 #AutoIt3Wrapper_Res_Description=Detection Script to help identify why your PC isn't Windows 11 Release Ready. Now Supporting Update Checks!
-#AutoIt3Wrapper_Res_Fileversion=2.5.0.4
+#AutoIt3Wrapper_Res_Fileversion=2.6.1.1
 #AutoIt3Wrapper_Res_ProductName=WhyNotWin11
-#AutoIt3Wrapper_Res_ProductVersion=2.5.0.4
+#AutoIt3Wrapper_Res_ProductVersion=2.6.1.1
 #AutoIt3Wrapper_Res_LegalCopyright=Robert Maehl, using LGPL 3 License
 #AutoIt3Wrapper_Res_Language=1033
 #AutoIt3Wrapper_Res_requestedExecutionLevel=asInvoker
@@ -63,7 +64,6 @@ EndIf
 
 Global $WINDOWS_DRIVE = EnvGet("SystemDrive")
 
-Global $bWin11 = False
 Global Static $aMUI[2] = [Null, @MUILang] ; Forced, MUI Lang
 Global Static $aName[2] = [Null, "WhyNotWin11"] ; Forced, AppName
 
@@ -90,10 +90,14 @@ Func ProcessCMDLine()
 	Local $aResults
 	Local $aExtended
 
+	Local $aTemp
+	Local $aSkips[11] = [False, False, False, False, False, False, False, False, False, False, False]
+	Local $bFUC = False
 	Local $sDrive = Null
 	Local $bForce = False
 	Local $bSilent = False
-	Local $aOutput[3] = [False, "", ""]
+	Local $aExtras[2] = ["",""]
+	Local $aOutput[4] = [False, "", "", $aExtras]
 	Local $iParams = $CmdLine[0]
 
 	If $aMUI[0] = Null Then
@@ -123,16 +127,19 @@ Func ProcessCMDLine()
 					MsgBox(0, "Help and Flags", _
 							"Checks PC for Windows 11 Release Compatibility" & @CRLF & _
 							@CRLF & _
-							"WhyNotWin11 [/export FORMAT FILENAME [/silent]][/drive DRIVE:][/force][/update [branch]]" & @CRLF & _
+							"WhyNotWin11 [/drive DRIVE:] [/export FORMAT [FILENAME]] [/extras DATA] [/force] [/fuonly] [/silent] [/skip CHECK] [/update [BUILD]]" & @CRLF & _
 							@CRLF & _
-							@TAB & "/export" & @TAB & "Export Results in an Available format, can be used" & @CRLF & _
+							@TAB & "/drive " & @TAB & "Overrides which Disk Drive to run checks on." & @CRLF & _
+							@TAB & "/export" & @TAB & "Export Results in CSV, TSV, or TXT, can be used" & @CRLF & _
 							@TAB & "       " & @TAB & "without the /silent flag for both GUI and file" & @CRLF & _
-							@TAB & "       " & @TAB & "output. Requires a filename if used." & @CRLF & _
-							@TAB & "formats" & @TAB & "TXT, CSV" & @CRLF & _
+							@TAB & "       " & @TAB & "output. Defaults to HOSTNAME if no filename set." & @CRLF & _
+							@TAB & "/extras" & @TAB & "Extra data to output when using /export (See Wiki." & @CRLF & _
 							@TAB & "/force " & @TAB & "Ignores program system requirements (e.g. WinPE)" & @CRLF & _
+							@TAB & "/fuonly" & @TAB & "Checks Win11 Feature Update compatibility" & @CRLF & _
 							@TAB & "/silent" & @TAB & "Don't Display the GUI. Compatible Systems will Exit" & @CRLF & _
 							@TAB & "       " & @TAB & "with ERROR_SUCCESS." & @CRLF & _
-							@TAB & "/update" & @TAB & "Downloads the latest RELEASE (default) or DEV build" & @CRLF & _
+							@TAB & "/skip  " & @TAB & "Skips a Comma Separated List of Checks (see Wiki)." & @CRLF & _
+							@TAB & "/update" & @TAB & "Downloads the latest RELEASE (default) or DEV build." & @CRLF & _
 							@CRLF & _
 							"Refer to https://WhyNotWin11.org/wiki/Command-Line-Switches for more details" & @CRLF)
 					Exit 0
@@ -151,32 +158,132 @@ Func ProcessCMDLine()
 					EndSelect
 				Case "/e", "/export", "/format"
 					Select
-						Case UBound($CmdLine) <= 3
-							MsgBox(0, "Invalid", "Missing FILENAME parameter for /format." & @CRLF)
-							Exit 87 ; ERROR_INVALID_PARAMETER
 						Case UBound($CmdLine) <= 2
 							MsgBox(0, "Invalid", "Missing FORMAT parameter for /format." & @CRLF)
 							Exit 87 ; ERROR_INVALID_PARAMETER
 						Case Else
 							Switch $CmdLine[2]
-								Case "CSV", "TXT"
+								Case "CSV", "TSV", "TXT"
 									$aOutput[0] = True
 									$aOutput[1] = $CmdLine[2]
-									$aOutput[2] = $CmdLine[3]
-									_ArrayDelete($CmdLine, "1-3")
+									Select
+										Case UBound($CmdLine) <= 3
+											ContinueCase
+										Case StringLeft($CmdLine[3], 1) = "/"
+											$aOutput[2] = @ComputerName & "." & $CmdLine[2]	
+											_ArrayDelete($CmdLine, "1-2")
+										Case Else
+											$aOutput[2] = $CmdLine[3]
+											If StringInStr(FileGetAttrib($CmdLine[3]), "D") Then
+												If Not StringRight($CmdLine[3], 1) <> "\" Then $aOutput[2] &= "\"
+												$aOutput[2] &= @ComputerName & "." & $CmdLine[2]
+											EndIf
+											_ArrayDelete($CmdLine, "1-3")
+									EndSelect
 								Case Else
 									MsgBox(0, "Invalid", "Invalid FORMAT parameter for /format." & @CRLF)
 									Exit 87 ; ERROR_INVALID_PARAMETER
 							EndSwitch
 					EndSelect
+					Case "/ex", "/extras"
+						Select
+							Case UBound($CmdLine) <= 2
+								MsgBox(0, "Invalid", "Missing DATA parameter for /extras." & @CRLF)
+								Exit 87 ; ERROR_INVALID_PARAMETER
+							Case Else
+								$aTemp = StringSplit($CmdLine[2], ",", $STR_NOCOUNT)
+								For $iLoop = 0 To UBound($aTemp) - 1
+									Switch $aTemp[$iLoop]
+										Case "BUILD"
+											$aExtras[0] &= ",OS Build"
+											$aExtras[1] &= "," & @OSBuild
+										Case "KEYBOARD"
+											$aExtras[0] &= ",Keyboard Langauage"
+											$aExtras[1] &= "," & @KBLayout
+										Case "LANGUAGE"
+											$aExtras[0] &= ",OS Langauage"
+											$aExtras[1] &= "," & @OSLang									
+										Case "MUI"
+											$aExtras[0] &= ",MUI Langauage"
+											$aExtras[1] &= "," & @MUILang
+										Case "OS"
+											$aExtras[0] &= ",Operating System"
+											$aExtras[1] &= "," & @OSVersion
+										Case "USER"
+											$aExtras[0] &= ",Logged In User"
+											$aExtras[1] &= "," & @UserName
+										Case Else
+											MsgBox(0, "Invalid", "Invalid DATA parameter for /extras." & @CRLF)
+											Exit 87 ; ERROR_INVALID_PARAMETER	
+									EndSwitch
+								Next
+								$aExtras[0] = StringTrimLeft($aExtras[0], 1)
+								$aExtras[1] = StringTrimLeft($aExtras[1], 1)
+								$aOutput[3] = $aExtras
+								_ArrayDelete($CmdLine, "1-2")
+						EndSelect
 				Case "/f", "/force"
 					$bForce = True
+					_ArrayDelete($CmdLine, 1)
+				Case "/fu", "/fuonly"
+					$bFUC = True
 					_ArrayDelete($CmdLine, 1)
 				Case "/s", "/silent"
 					$bSilent = True
 					_ArrayDelete($CmdLine, 1)
-				Case "/sc", "/skipcheck"
-					_ArrayDelete($CmdLine, 1)
+				Case "/sc", "/skip"
+					Select
+						Case UBound($CmdLine) <= 2
+							MsgBox(0, "Invalid", "Missing FORMAT parameter for /format." & @CRLF)
+							Exit 87 ; ERROR_INVALID_PARAMETER
+						Case Else
+							$aTemp = StringSplit($CmdLine[2], ",", $STR_NOCOUNT)
+							For $iLoop = 0 To UBound($aTemp) - 1
+								Switch $aTemp[$iLoop]
+									Case "Arch"
+										$aSkips[0] = True
+									Case "Boot"
+										$aSkips[1] = True
+									Case "Config"
+										$aSkips[1] = True
+										$aSkips[6] = True
+										$aSkips[8] = True
+									Case "CPU"
+										$aSkips[2] = True
+										$aSkips[3] = True
+										$aSkips[4] = True
+									Case "CPUCompat"
+										$aSkips[2] = True
+									Case "CPUCores"
+										$aSkips[3] = True
+									Case "CPUFreq"
+										$aSkips[4] = True
+									Case "DirectX"
+										$aSkips[5] = True
+									Case "Disk"
+										$aSkips[6] = True
+									Case "Hardware"
+										$aSkips[0] = True
+										$aSkips[2] = True
+										$aSkips[3] = True
+										$aSkips[4] = True
+										$aSkips[5] = True
+										$aSkips[7] = True
+									Case "RAM"
+										$aSkips[7] = True
+									Case "SecureBoot"
+										$aSkips[8] = True
+									Case "Storage"
+										$aSkips[9] = True
+									Case "TPM"
+										$aSkips[10] = True
+									Case Else
+										MsgBox(0, "Invalid", "Invalid CHECK parameter for /skip." & @CRLF)
+										Exit 87 ; ERROR_INVALID_PARAMETER	
+								EndSwitch
+							Next
+							_ArrayDelete($CmdLine, "1-2")
+					EndSelect
 				Case "/u", "/update"
 					Select
 						Case UBound($CmdLine) = 2
@@ -211,16 +318,24 @@ Func ProcessCMDLine()
 				If $bSilent Then
 					Exit 10 ; ERROR_BAD_ENVIRONMENT
 				Else
-					MsgBox($MB_ICONWARNING, _Translate(@MUILang, "Not Supported"), @OSVersion & " " & _Translate(@MUILang, "Not Supported"))
+					MsgBox($MB_ICONWARNING, StringReplace(_Translate($aMUI[1], "Not Supported"), "#", ""), StringReplace(_Translate($aMUI[1], "Not Supported"), "#", @OSVersion))
 				EndIf
 			Case "WIN_8", "WIN_8.1"
 				If $bSilent Then
 					Exit 10 ; ERROR_BAD_ENVIRONMENT
 				Else
-					MsgBox($MB_ICONWARNING, _Translate(@MUILang, "Warning"), StringReplace(_Translate(@MUILang, "May Report DirectX 12 Incorrectly"), '#', @OSVersion))
+					MsgBox($MB_ICONWARNING, _Translate($aMUI[1], "Warning"), StringReplace(_Translate($aMUI[1], "May Report DirectX 12 Incorrectly"), "#", @OSVersion))
 				EndIf
 			Case "WIN_11"
-				$bWin11 = True
+				If $bSilent Then
+					;;; ; Anyone using silent for WNW11 on Win11 can use /fuonly
+				Else
+					If MsgBox($MB_ICONQUESTION+$MB_YESNO, _Translate($aMUI[1], "Up to Date"), _Translate($aMUI[1], "Your computer is already on Windows 11. Would you like to check Feature Update Compatiblity instead?")) = $IDYES Then
+						$bFUC = True
+					Else
+						$bFUC = False
+					EndIf
+				EndIf
 			Case Else
 				;;;
 		EndSwitch
@@ -229,7 +344,7 @@ Func ProcessCMDLine()
 			If $bSilent Then
 				Exit 10 ; ERROR_BAD_ENVIRONMENT
 			Else
-				MsgBox($MB_ICONWARNING, _Translate(@MUILang, "Not Supported"), _Translate(@MUILang, "You're running the latest build!"))
+				MsgBox($MB_ICONWARNING, StringReplace(_Translate($aMUI[1], "Not Supported"), "#", ""), StringReplace(_Translate($aMUI[1], "Not Supported"), "#", "WINE"))
 			EndIf
 		EndIf
 
@@ -246,7 +361,7 @@ Func ProcessCMDLine()
 	If Not $bSilent And Not RegRead("HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Robert Maehl Software\WhyNotWin11", "NoProgress") Then ProgressOn($aName[1], _Translate(@MUILang, "Loading WMIC"))
 
 	$aResults = RunChecks($sDrive)
-	$aExtended = RunExtendedChecks($sDrive)
+	$aExtended = RunExtendedChecks($sDrive, $bFUC)
 
 	ProgressSet(80, "Done")
 
@@ -264,15 +379,15 @@ Func ProcessCMDLine()
 		$aColors = _SetTheme()
 		$aFonts = _GetTranslationFonts($aMUI[1])
 
-		Main($aResults, $aExtended, $aOutput)
+		Main($aResults, $aExtended, $aSkips, $aOutput, $bFUC)
 	Else
 		Do
 			FinalizeResults($aResults)
 		Until Not IsArray($aResults[5][0])
 	EndIf
-	If $aOutput[0] = True Then OutputResults($aResults, $aOutput)
+	If $aOutput[0] = True Then OutputResults($aResults, $aSkips, $aOutput)
 	For $iLoop = 0 To 10 Step 1
-		If $aResults[$iLoop][0] = False Or $aResults[$iLoop][0] < 1 Then Exit 1
+		If ($aResults[$iLoop][0] = False Or $aResults[$iLoop][0] < 1) And Not $aSkips[$iLoop] Then Exit 1
 	Next
 	Exit 0
 EndFunc   ;==>ProcessCMDLine
@@ -331,27 +446,47 @@ Func RunChecks($sDrive = Null)
 
 EndFunc   ;==>RunChecks
 
-Func RunExtendedChecks($sDrive = Null)
+Func RunExtendedChecks($sDrive = Null, $bFUC = False)
 
+	Local $sTemp
 	Local $aResults[11][3]
+	Local $sFeatureUpdate = False
 
-	$aResults[2][0] = _CPUNameCheck(_GetCPUInfo(2), _GetCPUInfo(6), _GetCPUInfo(5), True)
+	If @OSVersion = "WIN_11" and $bFUC Then
+		For $iLoop = 1 To 10 Step 1
+			$sTemp = RegEnumKey("HKLM64\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\TargetVersionUpgradeExperienceIndicators", $iLoop)
+			If @error Then ExitLoop
+			If StringRegExp($sTemp, ".*\d\d[Hh]\d") Then
+				If StringRegExpReplace($sTemp, "\D", "") > StringRegExpReplace($sFeatureUpdate, "\D", "") Then $sFeatureUpdate = $sTemp
+			EndIf
+		Next
+	EndIf
+
+	$aResults[2][0] = _CPUNameCheck(_GetCPUInfo(2), _GetCPUInfo(6), _GetCPUInfo(5), $sFeatureUpdate)
 	$aResults[2][1] = @error
 	$aResults[2][2] = @extended
 
-	$aResults[7][0] = _MemCheck(True)
+	$aResults[3][0] = _CPUCoresCheck(_GetCPUInfo(0), _GetCPUInfo(1), $sFeatureUpdate)
+	$aResults[3][1] = @error
+	$aResults[3][2] = @extended
+
+	$aResults[4][0] = _CPUSpeedCheck($sFeatureUpdate)
+	$aResults[4][1] = @error
+	$aResults[4][2] = @extended
+
+	$aResults[7][0] = _MemCheck($sFeatureUpdate)
 	$aResults[7][1] = @error
 	$aResults[7][2] = @extended
 
-	$aResults[8][0] = _SecureBootCheck(True)
+	$aResults[8][0] = _SecureBootCheck($sFeatureUpdate)
 	$aResults[8][1] = @error
 	$aResults[8][2] = @extended
 
-	$aResults[9][0] = _SpaceCheck($sDrive, True)
+	$aResults[9][0] = _SpaceCheck($sDrive, $sFeatureUpdate)
 	$aResults[9][1] = @error
 	$aResults[9][2] = @extended
 
-	$aResults[10][0] = _TPMCheck(True)
+	$aResults[10][0] = _TPMCheck($sFeatureUpdate)
 	$aResults[10][1] = @error
 	$aResults[10][2] = @extended
 
@@ -378,10 +513,10 @@ Func RunCheckValidation($aInitial, $aExtended)
 
 EndFunc
 
-Func Main(ByRef $aResults, ByRef $aExtended, ByRef $aOutput)
+Func Main(ByRef $aResults, ByRef $aExtended, ByRef $aSkips, ByRef $aOutput, $bFUC = False)
 
 	; Disable Scaling
-	If @OSVersion = 'WIN_10' Then DllCall(@SystemDir & "\User32.dll", "bool", "SetProcessDpiAwarenessContext", "HWND", "DPI_AWARENESS_CONTEXT" - 1)
+	If @OSVersion = 'WIN_10' Or 'WIN_11' Then DllCall(@SystemDir & "\User32.dll", "bool", "SetProcessDpiAwarenessContext", "HWND", "DPI_AWARENESS_CONTEXT" - 1)
 
 	Local $bComplete = False
 
@@ -394,6 +529,7 @@ Func Main(ByRef $aResults, ByRef $aExtended, ByRef $aOutput)
 	ProgressSet(100, _Translate($aMUI[1], "Done"))
 
 	Local $hGUI = GUICreate($aName[1], 800, 600, -1, -1, BitOR($WS_POPUP, $WS_BORDER), _GetTranslationRTL($aMUI[1]))
+	_WinAPI_DwmSetWindowAttributeExt($hGUI, 33, 2)
 	GUISetBkColor($aColors[$iBackground])
 	GUISetFont($aFonts[$FontSmall] * $DPI_RATIO, $FW_BOLD, "", $aFonts[4])
 
@@ -444,7 +580,7 @@ Func Main(ByRef $aResults, ByRef $aExtended, ByRef $aOutput)
 	GUICtrlSetCursor(-1, 0)
 
 	; Top Most Interaction for Socials
-	Local $hGithub = Default, $hDonate = Default, $hDiscord = Default, $hLTT = Default, $hJob = Default
+	Local $hGithub = Default, $hDonate = Default, $hDiscord = Default, $hWeb = Default, $hJob = Default
 	If $bWinPE Or Not RegRead("HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Robert Maehl Software\WhyNotWin11", "NoSocials") Then
 		$hGithub = GUICtrlCreateLabel("", 34, 110, 32, 32)
 		GUICtrlSetTip(-1, "GitHub")
@@ -458,13 +594,13 @@ Func Main(ByRef $aResults, ByRef $aExtended, ByRef $aOutput)
 		GUICtrlSetTip(-1, "Discord")
 		GUICtrlSetCursor(-1, 0)
 
-		$hLTT = GUICtrlCreateLabel("", 34, 260, 32, 32)
-		GUICtrlSetTip(-1, "LTT")
+		$hWeb = GUICtrlCreateLabel("", 34, 260, 32, 32)
+		GUICtrlSetTip(-1, _Translate($aMUI[1], "My Projects"))
 		GUICtrlSetCursor(-1, 0)
 
 		If @LogonDomain <> @ComputerName Then
 			$hJob = GUICtrlCreateLabel("", 34, 310, 32, 32)
-			GUICtrlSetTip(-1, "I'm For Hire")
+			GUICtrlSetTip(-1, _Translate($aMUI[1], "I'm For Hire"))
 			GUICtrlSetCursor(-1, 0)
 		EndIf
 	EndIf
@@ -517,27 +653,27 @@ Func Main(ByRef $aResults, ByRef $aExtended, ByRef $aOutput)
 			_SetBkSelfIcon(-1, $aColors[$iText], $aColors[$iSidebar], @ScriptFullPath, 206, 32, 32)
 		EndIf
 		GUICtrlCreateIcon("", -1, 42, 20, 20, 20)
-		_SetBkSelfIcon(-1, $aColors[$iText], $aColors[$iSidebar], @ScriptFullPath, 207, 20, 20)
+		_SetBkSelfIcon(-1, $aColors[$iText], $aColors[$iSidebar], @ScriptFullPath, 208, 20, 20)
 	Else
 		If Not RegRead("HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Robert Maehl Software\WhyNotWin11", "NoSocials") Then
 			GUICtrlCreateIcon("", -1, 34, 110, 32, 32)
 			_SetBkIcon(-1, $aColors[$iText], $aColors[$iSidebar], @ScriptDir & "\assets\GitHub.ico", -1, 32, 32)
 			GUICtrlCreateIcon("", -1, 34, 160, 32, 32)
-			_SetBkIcon(-1, $aColors[$iText], $aColors[$iSidebar], @ScriptDir & ".\assets\PayPal.ico", -1, 32, 32)
+			_SetBkIcon(-1, $aColors[$iText], $aColors[$iSidebar], @ScriptDir & "\assets\PayPal.ico", -1, 32, 32)
 			GUICtrlCreateIcon("", -1, 34, 210, 32, 32)
-			_SetBkIcon(-1, $aColors[$iText], $aColors[$iSidebar], @ScriptDir & ".\assets\Discord.ico", -1, 32, 32)
+			_SetBkIcon(-1, $aColors[$iText], $aColors[$iSidebar], @ScriptDir & "\assets\Discord.ico", -1, 32, 32)
 			GUICtrlCreateIcon("", -1, 34, 260, 32, 32)
-			_SetBkIcon(-1, $aColors[$iText], $aColors[$iSidebar], @ScriptDir & ".\assets\Web.ico", -1, 32, 32)
+			_SetBkIcon(-1, $aColors[$iText], $aColors[$iSidebar], @ScriptDir & "\assets\Web.ico", -1, 32, 32)
 			If @LogonDomain <> @ComputerName Then
 				GUICtrlCreateIcon("", -1, 34, 310, 32, 32)
-				_SetBkIcon(-1, $aColors[$iText], $aColors[$iSidebar], @ScriptDir & ".\assets\HireMe.ico", -1, 32, 32)
+				_SetBkIcon(-1, $aColors[$iText], $aColors[$iSidebar], @ScriptDir & "\assets\HireMe.ico", -1, 32, 32)
 			EndIf
 		EndIf
 		If BitAND($dSettings, 65535) = 65535 Then
 			;;;
 		Else
 			GUICtrlCreateIcon("", -1, 34, 518, 32, 32)
-			_SetBkIcon(-1, $aColors[$iText], $aColors[$iSidebar], @ScriptDir & ".\assets\Settings.ico", -1, 32, 32)
+			_SetBkIcon(-1, $aColors[$iText], $aColors[$iSidebar], @ScriptDir & "\assets\Settings.ico", -1, 32, 32)
 		EndIf
 		GUICtrlCreateIcon("", -1, 42, 20, 20, 20)
 		_SetBkIcon(-1, $aColors[$iText], $aColors[$iSidebar], @ScriptDir & "\assets\WhyNotWin11.ico", -1, 20, 20)
@@ -576,16 +712,21 @@ Func Main(ByRef $aResults, ByRef $aExtended, ByRef $aOutput)
 
 	GUICtrlCreateLabel(@ComputerName, 113, 560, 300, 20, $SS_CENTERIMAGE)
 	GUICtrlSetBkColor(-1, $aColors[$iFooter])
-	GUICtrlCreateLabel(_GetMotherboardInfo(0) & " " & _GetMotherboardInfo(1), 113, 580, 300, 20, $SS_CENTERIMAGE)
+	GUICtrlCreateLabel(_GetMotherboardInfo(0) & " " & _GetMotherboardInfo(1) & " @ " & _GetBIOSInfo(0), 113, 580, 300, 20, $SS_CENTERIMAGE)
 	GUICtrlSetBkColor(-1, $aColors[$iFooter])
-	GUICtrlCreateLabel(_GetCPUInfo(2), 450, 560, 300, 20, $SS_CENTERIMAGE)
+	GUICtrlCreateLabel(StringReplace(_GetCPUInfo(2), " CPU", ""), 450, 560, 300, 20, $SS_CENTERIMAGE)
 	GUICtrlSetBkColor(-1, $aColors[$iFooter])
 	GUICtrlCreateLabel(_GetGPUInfo(0), 450, 580, 300, 20, $SS_CENTERIMAGE)
 	GUICtrlSetBkColor(-1, $aColors[$iFooter])
 	#EndRegion
 
 	#Region Header
-	Local $hHeader = GUICtrlCreateLabel(_Translate($aMUI[1], "Your Windows 11 Compatibility Results Are Below"), 130, 10, 640, 40, $SS_CENTER + $SS_CENTERIMAGE)
+	Local $hHeader
+	If $bFUC Then
+		$hHeader = GUICtrlCreateLabel(_Translate($aMUI[1], "Your Feature Update Compatibility Results Are Below"), 130, 10, 640, 40, $SS_CENTER + $SS_CENTERIMAGE)
+	Else
+		$hHeader = GUICtrlCreateLabel(_Translate($aMUI[1], "Your Windows 11 Compatibility Results Are Below"), 130, 10, 640, 40, $SS_CENTER + $SS_CENTERIMAGE)
+	EndIf
 	GUICtrlSetFont(-1, $aFonts[$FontLarge] * $DPI_RATIO, $FW_SEMIBOLD, "", "", $CLEARTYPE_QUALITY)
 
 	#cs
@@ -614,10 +755,11 @@ Func Main(ByRef $aResults, ByRef $aExtended, ByRef $aOutput)
 
 	Local $bInfoBox = RegRead("HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Robert Maehl Software\WhyNotWin11", "NoInfoBox")
 	Local $hCheck[11][3]
-	Local $hLabel[11] = ["Architecture", "Boot Method", "CPU Compatibility", "CPU Core Count", "CPU Frequency", "DirectX + WDDM2", "Disk Partition Type", "RAM Installed", "Secure Boot", "Storage Available", "TPM Version"]
+	Local $hLabel[11] = ["Architecture", "Boot Method", "CPU Compatibility", "CPU Core Count", "CPU Frequency", "DirectX 12 and WDDM 2", "Disk Partition Type", "RAM Installed", "Secure Boot", "Storage Available", "TPM Version"]
 	Local $aInfo = _GetDescriptions($aMUI[1])
 
 	_GDIPlus_Startup()
+
 	For $iRow = 0 To 10 Step 1
 		$hCheck[$iRow][0] = GUICtrlCreateLabel("…", 113, 70 + $iRow * 44, 40, 40, $SS_CENTER + $SS_SUNKEN + $SS_CENTERIMAGE) 
 		GUICtrlSetBkColor(-1, $aColors[$iBackground])
@@ -645,167 +787,227 @@ Func Main(ByRef $aResults, ByRef $aExtended, ByRef $aOutput)
 	_GDIPlus_Shutdown()
 
 	#Region ; ArchCheck()
-	Switch $aResults[0][0]
-		Case True
-			_GUICtrlSetState($hCheck[0][0], $iPass)
-			GUICtrlSetData($hCheck[0][2], _Translate($aMUI[1], "64 Bit CPU") & @CRLF & _Translate($aMUI[1], "64 Bit OS"))
-		Case Else
-			Switch $aResults[0][1]
-				Case 0
-					_GUICtrlSetState($hCheck[0][0], $iUnsure)
-					GUICtrlSetData($hCheck[0][2], _Translate($aMUI[1], "Check Skipped"))
-				Case 1
-					_GUICtrlSetState($hCheck[0][0], $iWarn)
-					GUICtrlSetData($hCheck[0][2], _Translate($aMUI[1], "64 Bit CPU") & @CRLF & _Translate($aMUI[1], "32 Bit OS"))
-				Case 2
-					_GUICtrlSetState($hCheck[0][0], $iFail)
-					GUICtrlSetData($hCheck[0][2], _Translate($aMUI[1], "32 Bit CPU") & @CRLF & _Translate($aMUI[1], "32 Bit OS"))
-				Case Else
-					_GUICtrlSetState($hCheck[0][0], $iFail)
-					GUICtrlSetData($hCheck[0][2], "?")
-			EndSwitch
-	EndSwitch
+	If $aSkips[0] Then
+		_GUICtrlSetState($hCheck[0][0], $iUnsure)
+		GUICtrlSetData($hCheck[0][2], _Translate($aMUI[1], "Check Skipped"))
+	Else
+		Switch $aResults[0][0]
+			Case True
+				_GUICtrlSetState($hCheck[0][0], $iPass)
+				GUICtrlSetData($hCheck[0][2], _Translate($aMUI[1], "64 Bit CPU") & @CRLF & _Translate($aMUI[1], "64 Bit OS"))
+			Case Else
+				Switch $aResults[0][1]
+					Case 0
+						_GUICtrlSetState($hCheck[0][0], $iUnsure)
+						GUICtrlSetData($hCheck[0][2], _Translate($aMUI[1], "Check Skipped"))
+					Case 1
+						_GUICtrlSetState($hCheck[0][0], $iWarn)
+						GUICtrlSetData($hCheck[0][2], _Translate($aMUI[1], "64 Bit CPU") & @CRLF & _Translate($aMUI[1], "32 Bit OS"))
+					Case 2
+						_GUICtrlSetState($hCheck[0][0], $iFail)
+						GUICtrlSetData($hCheck[0][2], _Translate($aMUI[1], "32 Bit CPU") & @CRLF & _Translate($aMUI[1], "32 Bit OS"))
+					Case Else
+						_GUICtrlSetState($hCheck[0][0], $iFail)
+						GUICtrlSetData($hCheck[0][2], "?")
+				EndSwitch
+		EndSwitch
+	EndIf
 	#EndRegion
 
 	#Region ; _BootCheck()
-	Switch $aResults[1][0]
-		Case True
-			_GUICtrlSetState($hCheck[1][0], $iPass)
-			GUICtrlSetData($hCheck[1][2], "UEFI")
-		Case False
-			Switch $aResults[1][1]
-				Case 0
-					_GUICtrlSetState($hCheck[1][0], $iFail)
-					GUICtrlSetData($hCheck[1][2], "Legacy")
-				Case Else
-					GUICtrlSetData($hCheck[1][2], _Translate($aMUI[1], "Not Supported"))
-					_GUICtrlSetState($hCheck[1][0], $iWarn)
-			EndSwitch
-	EndSwitch
+	If $aSkips[1] Then
+		_GUICtrlSetState($hCheck[1][0], $iUnsure)
+		GUICtrlSetData($hCheck[1][2], _Translate($aMUI[1], "Check Skipped"))
+	Else
+		Switch $aResults[1][0]
+			Case True
+				_GUICtrlSetState($hCheck[1][0], $iPass)
+				GUICtrlSetData($hCheck[1][2], "UEFI")
+			Case False
+				Switch $aResults[1][1]
+					Case 0
+						_GUICtrlSetState($hCheck[1][0], $iFail)
+						GUICtrlSetData($hCheck[1][2], "Legacy")
+					Case Else
+						GUICtrlSetData($hCheck[1][2], StringReplace(_Translate($aMUI[1], "Not Supported"), "#", ""))
+						_GUICtrlSetState($hCheck[1][0], $iWarn)
+				EndSwitch
+		EndSwitch
+	EndIf
 	#EndRegion
 
 	#Region ; _CPUNameCheck()
-	If $aExtended[2][0] Then
-		_GUICtrlSetState($hCheck[2][0], $iPass)
-		GUICtrlSetData($hCheck[2][2], _Translate($aMUI[1], "Listed as Compatible"))
+	If $aSkips[2] Then
+		_GUICtrlSetState($hCheck[2][0], $iUnsure)
+		GUICtrlSetData($hCheck[2][2], _Translate($aMUI[1], "Check Skipped"))
 	Else
-		Switch $aResults[2][0]
-			Case False
-				Switch $aResults[2][1]
-					Case 1
-						_GUICtrlSetState($hCheck[2][0], $iWarn)
-						GUICtrlSetData($hCheck[2][2], _Translate($aMUI[1], "Unable to Check List"))
-					Case 2
-						_GUICtrlSetState($hCheck[2][0], $iWarn)
-						GUICtrlSetData($hCheck[2][2], _Translate($aMUI[1], "Error Accessing List"))
-					Case 3
-						_GUICtrlSetState($hCheck[2][0], $iFail)
-						GUICtrlSetData($hCheck[2][2], _Translate($aMUI[1], "Not Supported"))
-				EndSwitch
-			Case Else
-				_GUICtrlSetState($hCheck[2][0], $iPass)
-				GUICtrlSetData($hCheck[2][2], _Translate($aMUI[1], "Listed as Compatible"))
-		EndSwitch
+		If ($bFUC = True ? $aExtended[2][0] : $aResults[2][0]) Then
+			_GUICtrlSetState($hCheck[2][0], $iPass)
+			GUICtrlSetData($hCheck[2][2], _Translate($aMUI[1], "Listed as Compatible"))
+		Else
+			Switch ($bFUC = True ? $aExtended[2][0] : $aResults[2][0])
+				Case False
+					Switch $aResults[2][1]
+						Case 1
+							_GUICtrlSetState($hCheck[2][0], $iWarn)
+							GUICtrlSetData($hCheck[2][2], _Translate($aMUI[1], "Unable to Check List"))
+						Case 2
+							_GUICtrlSetState($hCheck[2][0], $iWarn)
+							GUICtrlSetData($hCheck[2][2], _Translate($aMUI[1], "Error Accessing List"))
+						Case 3
+							_GUICtrlSetState($hCheck[2][0], $iFail)
+							GUICtrlSetData($hCheck[2][2], StringReplace(_Translate($aMUI[1], "Not Supported"), "#", ""))
+						Case Else
+							_GUICtrlSetState($hCheck[2][0], $iFail)
+							GUICtrlSetData($hCheck[2][2], StringReplace(_Translate($aMUI[1], "Not Supported"), "#", ""))
+					EndSwitch
+				Case Else
+					_GUICtrlSetState($hCheck[2][0], $iPass)
+					GUICtrlSetData($hCheck[2][2], _Translate($aMUI[1], "Listed as Compatible"))
+			EndSwitch
+		EndIf
 	EndIf
 	#EndRegion
 
 	#Region ; _CPUCoresCheck()
-	If $aResults[3][0] Then
-		_GUICtrlSetState($hCheck[3][0], $iPass)
+	If $aSkips[3] Then
+		_GUICtrlSetState($hCheck[3][0], $iUnsure)
+		GUICtrlSetData($hCheck[3][2], _Translate($aMUI[1], "Check Skipped"))
 	Else
-		_GUICtrlSetState($hCheck[3][0], $iFail)
-	EndIf
+		If ($bFUC = True ? $aExtended[3][0] : $aResults[3][0]) Then
+			_GUICtrlSetState($hCheck[3][0], $iPass)
+		Else
+			_GUICtrlSetState($hCheck[3][0], $iFail)
+		EndIf
 
-	Local $sCores = StringReplace(_Translate($aMUI[1], "Cores"), '#', _GetCPUInfo(0))
-	If @extended = 0 Then $sCores = _GetCPUInfo(0) & " " & $sCores
-	Local $sThreads = StringReplace(_Translate($aMUI[1], "Threads"), '#', _GetCPUInfo(1))
-	If @extended = 0 Then $sThreads = _GetCPUInfo(1) & " " & $sThreads
-	GUICtrlSetData($hCheck[3][2], $sCores & @CRLF & $sThreads)
+		Local $sCores = StringReplace(_Translate($aMUI[1], "Cores"), "#", _GetCPUInfo(0))
+		If @extended = 0 Then $sCores = _GetCPUInfo(0) & " " & $sCores
+		Local $sThreads = StringReplace(_Translate($aMUI[1], "Threads"), "#", _GetCPUInfo(1))
+		If @extended = 0 Then $sThreads = _GetCPUInfo(1) & " " & $sThreads
+		GUICtrlSetData($hCheck[3][2], $sCores & @CRLF & $sThreads)
+	EndIf
 	#EndRegion
 
 	#Region ; _CPUSpeedCheck()
-	If $aResults[4][0] Then
-		_GUICtrlSetState($hCheck[4][0], $iPass)
-		Switch $aResults[4][2]
-			Case 0
-				GUICtrlSetData($hCheck[4][2], _GetCPUInfo(3) & " MHz")
-			Case 1
-				GUICtrlSetData($hCheck[4][2], RegRead("HKEY_LOCAL_MACHINE\HARDWARE\DESCRIPTION\System\CentralProcessor\0", "~MHz") & " MHz")
-		EndSwitch
+	If $aSkips[4] Then
+		_GUICtrlSetState($hCheck[4][0], $iUnsure)
+		GUICtrlSetData($hCheck[4][2], _Translate($aMUI[1], "Check Skipped"))
 	Else
-		_GUICtrlSetState($hCheck[4][0], $iFail)
-		GUICtrlSetData($hCheck[4][2], _GetCPUInfo(3) & " MHz")
+		If ($bFUC = True ? $aExtended[4][0] : $aResults[4][0]) Then
+			_GUICtrlSetState($hCheck[4][0], $iPass)
+			Switch $aResults[4][2]
+				Case 0
+					GUICtrlSetData($hCheck[4][2], _GetCPUInfo(3) & " MHz")
+				Case 1
+					GUICtrlSetData($hCheck[4][2], RegRead("HKEY_LOCAL_MACHINE\HARDWARE\DESCRIPTION\System\CentralProcessor\0", "~MHz") & " MHz")
+			EndSwitch
+		Else
+			_GUICtrlSetState($hCheck[4][0], $iFail)
+			GUICtrlSetData($hCheck[4][2], _GetCPUInfo(3) & " MHz")
+		EndIf
 	EndIf
 	#EndRegion
 
+	#Region ; _DirectXStartCheck() Skip
+	If $aSkips[5] Then
+		_GUICtrlSetState($hCheck[5][0], $iUnsure)
+		GUICtrlSetData($hCheck[5][2], _Translate($aMUI[1], "Check Skipped"))
+		$bComplete = True
+	EndIf
+
 	#Region ; _GPTCheck()
-	If $aResults[6][0] Then
-		If $aResults[6][1] Then
-			_GUICtrlSetState($hCheck[6][0], $iPass)
-			GUICtrlSetData($hCheck[6][2], _Translate($aMUI[1], "GPT Detected"))
-		Else
-			_GUICtrlSetState($hCheck[6][0], $iPass)
-			GUICtrlSetData($hCheck[6][2], _Translate($aMUI[1], "GPT Detected"))
-		EndIf
+	If $aSkips[6] Then
+		_GUICtrlSetState($hCheck[6][0], $iUnsure)
+		GUICtrlSetData($hCheck[6][2], _Translate($aMUI[1], "Check Skipped"))
 	Else
-		GUICtrlSetData($hCheck[6][2], _Translate($aMUI[1], "GPT Not Detected"))
-		_GUICtrlSetState($hCheck[6][0], $iFail)
+		If $aResults[6][0] Then
+			If $aResults[6][1] Then
+				_GUICtrlSetState($hCheck[6][0], $iPass)
+				GUICtrlSetData($hCheck[6][2], _Translate($aMUI[1], "GPT Detected"))
+			Else
+				_GUICtrlSetState($hCheck[6][0], $iPass)
+				GUICtrlSetData($hCheck[6][2], _Translate($aMUI[1], "GPT Detected"))
+			EndIf
+		Else
+			GUICtrlSetData($hCheck[6][2], _Translate($aMUI[1], "GPT Not Detected"))
+			_GUICtrlSetState($hCheck[6][0], $iFail)
+		EndIf
 	EndIf
 	#EndRegion
 
 	#Region ; _MemCheck()
-	If $aResults[7][0] Then
-		_GUICtrlSetState($hCheck[7][0], $iPass)
-		GUICtrlSetData($hCheck[7][2], $aResults[7][1] & " GB")
+	If $aSkips[7] Then
+		_GUICtrlSetState($hCheck[7][0], $iUnsure)
+		GUICtrlSetData($hCheck[7][2], _Translate($aMUI[1], "Check Skipped"))
 	Else
-		GUICtrlSetData($hCheck[7][2], $aResults[7][1] & " GB")
-		_GUICtrlSetState($hCheck[7][0], $iFail)
+		If ($bFUC = True ? $aExtended[7][0] : $aResults[7][0]) Then
+			_GUICtrlSetState($hCheck[7][0], $iPass)
+			GUICtrlSetData($hCheck[7][2], $aResults[7][1] & " GB")
+		Else
+			GUICtrlSetData($hCheck[7][2], $aResults[7][1] & " GB")
+			_GUICtrlSetState($hCheck[7][0], $iFail)
+		EndIf
 	EndIf
 	#EndRegion
 
 	#Region ; _SecureBootCheck()
-	Switch $aResults[8][0]
-		Case True
-			Switch $aResults[8][2]
-				Case 1
-					_GUICtrlSetState($hCheck[8][0], $iPass)
-					GUICtrlSetData($hCheck[8][2], _Translate($aMUI[1], "Enabled"))
-				Case 0
-					_GUICtrlSetState($hCheck[8][0], $iPass)
-					GUICtrlSetData($hCheck[8][2], _Translate($aMUI[1], "Supported"))
-			EndSwitch
-		Case False
-			_GUICtrlSetState($hCheck[8][0], $iFail)
-			GUICtrlSetData($hCheck[8][2], _Translate($aMUI[1], "Disabled / Not Detected"))
-	EndSwitch
+	If $aSkips[8] Then
+		_GUICtrlSetState($hCheck[8][0], $iUnsure)
+		GUICtrlSetData($hCheck[8][2], _Translate($aMUI[1], "Check Skipped"))
+	Else
+		Switch ($bFUC = True ? $aExtended[8][0] : $aResults[8][0])
+			Case True
+				Switch $aResults[8][2]
+					Case 1
+						_GUICtrlSetState($hCheck[8][0], $iPass)
+						GUICtrlSetData($hCheck[8][2], _Translate($aMUI[1], "Enabled"))
+					Case 0
+						_GUICtrlSetState($hCheck[8][0], $iPass)
+						GUICtrlSetData($hCheck[8][2], _Translate($aMUI[1], "Supported"))
+				EndSwitch
+			Case False
+				_GUICtrlSetState($hCheck[8][0], $iFail)
+				GUICtrlSetData($hCheck[8][2], _Translate($aMUI[1], "Disabled / Not Detected"))
+		EndSwitch
+	EndIf
 	#EndRegion
 
 	#Region ; _SpaceCheck()
-	If $aResults[9][0] Then
-		_GUICtrlSetState($hCheck[9][0], $iPass)
+	If $aSkips[9] Then
+		_GUICtrlSetState($hCheck[9][0], $iUnsure)
+		GUICtrlSetData($hCheck[9][2], _Translate($aMUI[1], "Check Skipped"))
 	Else
-		_GUICtrlSetState($hCheck[9][0], $iFail)
+		If ($bFUC = True ? $aExtended[9][0] : $aResults[9][0]) Then
+			_GUICtrlSetState($hCheck[9][0], $iPass)
+		Else
+			_GUICtrlSetState($hCheck[9][0], $iFail)
+		EndIf
+		GUICtrlSetData($hCheck[9][2], $WINDOWS_DRIVE & " " & $aResults[9][1] & " GB" & @CRLF & StringReplace(_Translate($aMUI[1], "Drive(s) Meet Requirements"), "#", $aResults[9][2]))
 	EndIf
-	GUICtrlSetData($hCheck[9][2], $aResults[9][1] & " GB " & $WINDOWS_DRIVE & @CRLF & $aResults[9][2] & " " & _Translate($aMUI[1], "Drive(s) Meet Requirements"))
 	#EndRegion
 
 	#Region : TPM Check
-	If $aResults[10][0] Then
-		_GUICtrlSetState($hCheck[10][0], $iPass)
-		GUICtrlSetData($hCheck[10][2], "TPM " & $aResults[10][1] & " " & _Translate($aMUI[1], "Detected"))
+	If $aSkips[10] Then
+		_GUICtrlSetState($hCheck[10][0], $iUnsure)
+		GUICtrlSetData($hCheck[10][2], _Translate($aMUI[1], "Check Skipped"))
 	Else
-		_GUICtrlSetState($hCheck[10][0], $iFail)
-		Switch $aResults[10][1]
-			Case 0
-				GUICtrlSetData($hCheck[10][2], _Translate($aMUI[1], "TPM Missing / Disabled"))
-			Case 1
-				GUICtrlSetData($hCheck[10][2], "TPM " & Number(StringSplit(_GetTPMInfo(2), ", ", $STR_NOCOUNT)[0]) & " " & _Translate($aMUI[1], "Not Supported"))
-			Case 2
-				GUICtrlSetData($hCheck[10][2], "TPM " & Number(StringSplit(_GetTPMInfo(2), ", ", $STR_NOCOUNT)[0]) & " " & _Translate($aMUI[1], "Not Supported"))
-			Case 3
-				_GUICtrlSetState($hCheck[10][0], $iUnsure)
-				GUICtrlSetData($hCheck[10][2], _Translate($aMUI[1], "TPM Status Error"))
-		EndSwitch
+		If ($bFUC = True ? $aExtended[10][0] : $aResults[10][0]) Then
+			_GUICtrlSetState($hCheck[10][0], $iPass)
+			GUICtrlSetData($hCheck[10][2], "TPM " & $aResults[10][1] & " " & _Translate($aMUI[1], "Detected"))
+		Else
+			_GUICtrlSetState($hCheck[10][0], $iFail)
+			Switch $aResults[10][1]
+				Case 0
+					GUICtrlSetData($hCheck[10][2], _Translate($aMUI[1], "Disabled / Not Detected"))
+				Case 1
+					GUICtrlSetData($hCheck[10][2], "TPM " & Number(StringSplit(_GetTPMInfo(2), ", ", $STR_NOCOUNT)[0]) & " " & StringReplace(_Translate($aMUI[1], "Not Supported"), "#", ""))
+				Case 2
+					GUICtrlSetData($hCheck[10][2], "TPM " & Number(StringSplit(_GetTPMInfo(2), ", ", $STR_NOCOUNT)[0]) & " " & StringReplace(_Translate($aMUI[1], "Not Supported"), "#", ""))
+				Case 3
+					_GUICtrlSetState($hCheck[10][0], $iUnsure)
+					GUICtrlSetData($hCheck[10][2], _Translate($aMUI[1], "TPM Status Error"))
+			EndSwitch
+		EndIf
 	EndIf
 	#EndRegion
 
@@ -966,11 +1168,6 @@ Func Main(ByRef $aResults, ByRef $aExtended, ByRef $aOutput)
 				If $aOutput[0] = True Then Return
 				Exit
 
-				#cs
-				Case $hMsg = $h_WWW
-					ShellExecute("https://www.whynotwin11.org/")
-				#ce
-
 			Case Not IsArray($aResults[5][0]) And $bComplete = False And Not $bSettings
 				$bComplete = True
 				Switch $aResults[5][0]
@@ -978,10 +1175,10 @@ Func Main(ByRef $aResults, ByRef $aExtended, ByRef $aOutput)
 						Switch $aResults[5][2]
 							Case 1
 								_GUICtrlSetState($hCheck[5][0], $iPass)
-								GUICtrlSetData($hCheck[5][2], "DirectX 12 && WDDM 2")   ; <== No translation, "DirectX 12 and WDDM 2" in LANG-file
+								GUICtrlSetData($hCheck[5][2], _Translate($aMUI[1], "DirectX 12 and WDDM 2"))
 							Case 2
 								_GUICtrlSetState($hCheck[5][0], $iPass)
-								GUICtrlSetData($hCheck[5][2], "DirectX 12 && WDDM 3")   ; <== No translation, "DirectX 12 and WDDM 3" in LANG-file
+								GUICtrlSetData($hCheck[5][2], _Translate($aMUI[1], "DirectX 12 and WDDM 3"))
 						EndSwitch
 					Case Else
 						Switch $aResults[5][1]
@@ -1010,7 +1207,7 @@ Func Main(ByRef $aResults, ByRef $aExtended, ByRef $aOutput)
 						If $iLoop = 2 And $aExtended[$iLoop][0] = True Then ContinueLoop ; Pass if Windows Update Reports CPU Okay
 						If $aResults[$iLoop][0] = False Or $aResults[$iLoop][0] < 1 Then
 							MsgBox($MB_OK+$MB_ICONERROR+$MB_TOPMOST+$MB_SETFOREGROUND, _
-								_Translate($aMUI[1], "Not Supported"), _
+								StringReplace(_Translate($aMUI[1], "Not Supported"), "#", ""), _
 								_Translate($aMUI[1], "Your Computer is NOT ready for Windows 11, you can join the Discord using the Discord Icon if you need assistance."))
 							ContinueLoop 2
 						EndIf
@@ -1018,7 +1215,7 @@ Func Main(ByRef $aResults, ByRef $aExtended, ByRef $aOutput)
 					If Not RunCheckValidation($aResults, $aExtended) Then
 						MsgBox($MB_OK+$MB_ICONWARNING+$MB_TOPMOST+$MB_SETFOREGROUND, _
 							_Translate($aMUI[1], "Supported"), _
-							_Translate($aMUI[1], "Your Computer is ready for Windows 11 and its updates, but Windows Update may you are not for 30 days. You can fix this using the Windows Installation Assistant."))
+							_Translate($aMUI[1], "Your Computer is ready for Windows 11 and its updates, but Windows Update may think you are not for 30 days. You can fix this using the Windows Installation Assistant."))
 					Else
 						MsgBox($MB_OK+$MB_ICONINFORMATION+$MB_TOPMOST+$MB_SETFOREGROUND, _
 							_Translate($aMUI[1], "Supported"), _
@@ -1030,13 +1227,13 @@ Func Main(ByRef $aResults, ByRef $aExtended, ByRef $aOutput)
 				If StringLeft(GUICtrlRead($hLanguage), 4) <> $aMUI[1] Then
 					$aMUI[1] = StringLeft(GUICtrlRead($hLanguage), 4)
 					GUIDelete($hGUI)
-					Main($aResults, $aExtended, $aOutput)
+					Main($aResults, $aExtended, $aSkips, $aOutput, $bFUC)
 				EndIf
 
 			Case $hMsg = $hTheme
 				$aColors = _SetTheme(StringSplit(GUICtrlRead($hTheme), " - ")[1])
 				GUIDelete($hGUI)
-				Main($aResults, $aExtended, $aOutput)
+				Main($aResults, $aExtended, $aSkips, $aOutput, $bFUC)
 
 			Case $hMsg = $hDumpLang
 				FileDelete(@LocalAppDataDir & "\WhyNotWin11\langs\")
@@ -1053,8 +1250,8 @@ Func Main(ByRef $aResults, ByRef $aExtended, ByRef $aOutput)
 			Case $hMsg = $hDiscord
 				ShellExecute("https://discord.gg/uBnBcBx")
 
-			Case $hMsg = $hLTT
-				ShellExecute("https://linustechtips.com/topic/1350354-windows-11-readiness-check-whynotwin11/")
+			Case $hMsg = $hWeb
+				ShellExecute("https://fcofix.org")
 
 			; Case $hMsg = $hMUI
 
@@ -1194,50 +1391,109 @@ EndFunc   ;==>FinalizeResults
 ; Link ..........:
 ; Example .......: No
 ; ===============================================================================================================================
-Func OutputResults(ByRef $aResults, $aOutput)
+Func OutputResults(ByRef $aResults, ByRef $aSkips, $aOutput)
 
-	Local $sFile, $hFile
+	Local $sFile, $hFile, $sOut = ""
+	Local $aExtras, $aExtraData
 
 	Local $aLabel[11] = ["Architecture", "Boot Method", "CPU Compatibility", "CPU Core Count", "CPU Frequency", "DirectX + WDDM2", "Disk Partition Type", "RAM Installed", "Secure Boot", "Storage Available", "TPM Version"]
 
+	$aExtras = $aOutput[3]
+
+	_ArrayAdd($aLabel, StringSplit($aExtras[0], ",", $STR_NOCOUNT))
+	$aExtraData = StringSplit($aExtras[1], ",", $STR_NOCOUNT)
+
+	If $aLabel[11] <> "" Then
+		;;;
+	Else
+		_ArrayDelete($aLabel, 11)
+	EndIf
+
 	Switch $aOutput[1]
 		Case "txt"
-			If StringInStr($aOutput[2], ":") Then
+			If StringInStr($aOutput[2], ":") Or StringInStr($aOutput[2], "\\") Then
 				$sFile = $aOutput[2]
 			Else
 				$sFile = @ScriptDir & "\" & $aOutput[2]
 			EndIf
 			$hFile = FileOpen($sFile, $FO_CREATEPATH + $FO_OVERWRITE)
-			FileWrite($hFile, "Results for " & @ComputerName & @CRLF)
-			For $iLoop = 0 To 10 Step 1
-				FileWrite($hFile, $aLabel[$iLoop] & @TAB & $aResults[$iLoop][0] & @TAB & $aResults[$iLoop][1] & @TAB & $aResults[$iLoop][2] & @CRLF)
+			$sOut = "Results for " & @ComputerName & @CRLF
+			For $iLoop = 0 To UBound($aLabel) - 1 Step 1
+				If $iLoop > 10 Then
+					$sOut &= $aLabel[$iLoop] & ": " & $aExtraData[$iLoop - 11] & @CRLF
+				Else
+					If $aSkips[$iLoop] Then
+						$sOut &= $aLabel[$iLoop] & @TAB & True & @TAB & "Skipped" & @TAB & "Skipped" & @CRLF
+					Else
+						$sOut &= $aLabel[$iLoop] & @TAB & $aResults[$iLoop][0] & @TAB & $aResults[$iLoop][1] & @TAB & $aResults[$iLoop][2] & @CRLF
+					EndIf
+				EndIf
 			Next
-			FileClose($hFile)
-		Case "csv"
-			If StringInStr($aOutput[2], ":") Then
+
+		Case "tsv"
+			If StringInStr($aOutput[2], ":") Or StringInStr($aOutput[2], "\\") Then
 				$sFile = $aOutput[2]
 			Else
 				$sFile = @ScriptDir & "\" & $aOutput[2]
 			EndIf
 			If Not FileExists($sFile) Then
 				$hFile = FileOpen($sFile, $FO_CREATEPATH + $FO_OVERWRITE)
-				FileWrite($hFile, "Hostname")
-				For $iLoop = 0 To 10 Step 1
-					FileWrite($hFile, "," & $aLabel[$iLoop])
+				$sOut = "Hostname"
+				For $iLoop = 0 To UBound($aLabel) - 1 Step 1
+					$sOut &= @TAB & $aLabel[$iLoop]
 				Next
-				FileWrite($hFile, @CRLF)
+				FileWrite($hFile, $sOut & @CRLF)
 			Else
 				$hFile = FileOpen($sFile, $FO_APPEND)
 			EndIf
-			FileWrite($hFile, @ComputerName)
-			For $iLoop = 0 To 10 Step 1
-				FileWrite($hFile, "," & $aResults[$iLoop][0])
+			$sOut = @ComputerName
+			For $iLoop = 0 To UBound($aLabel) - 1 Step 1
+				If $iLoop > 10 Then
+					$sOut &= @TAB & $aExtraData[$iLoop - 11]
+				Else
+					If $aSkips[$iLoop] Then
+						$sOut &= @TAB & True
+					Else
+						$sOut &= @TAB & $aResults[$iLoop][0]
+					EndIf
+				EndIf
 			Next
-			FileWrite($hFile, @CRLF)
-			FileClose($hFile)
+
+		Case "csv"
+			If StringInStr($aOutput[2], ":") Or StringInStr($aOutput[2], "\\") Then
+				$sFile = $aOutput[2]
+			Else
+				$sFile = @ScriptDir & "\" & $aOutput[2]
+			EndIf
+			If Not FileExists($sFile) Then
+				$hFile = FileOpen($sFile, $FO_CREATEPATH + $FO_OVERWRITE)
+				$sOut = "Hostname"
+				For $iLoop = 0 To UBound($aLabel) - 1 Step 1
+					$sOut &= "," & $aLabel[$iLoop]
+				Next
+				FileWrite($hFile, $sOut & @CRLF)
+			Else
+				$hFile = FileOpen($sFile, $FO_APPEND)
+			EndIf
+			$sOut = @ComputerName
+			For $iLoop = 0 To UBound($aLabel) - 1 Step 1
+				If $iLoop > 10 Then
+					$sOut &= "," & $aExtraData[$iLoop - 11]
+				Else
+					If $aSkips[$iLoop] Then
+						$sOut &= "," & True
+					Else
+						$sOut &= "," & $aResults[$iLoop][0]
+					EndIf
+				EndIf
+			Next
+
 		Case Else
 			;;;
+
 	EndSwitch
+	FileWrite($hFile, $sOut & @CRLF)
+	FileClose($hFile)
 
 EndFunc   ;==>OutputResults
 

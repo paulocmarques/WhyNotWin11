@@ -30,10 +30,10 @@ Func _BootCheck()
 	EndSwitch
 EndFunc   ;==>_BootCheck
 
-Func _CPUNameCheck($sCPU, $sFamily, $sVersion, $bAppCompat = False)
+Func _CPUNameCheck($sCPU, $sFamily, $sVersion, $sWinFU = False)
 
-	If $bAppCompat Then
-		Local $sReg = RegRead("HKLM64\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\TargetVersionUpgradeExperienceIndicators\NI22H2", "RedReason")
+	If $sWinFU Then
+		Local $sReg = RegRead("HKLM64\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\TargetVersionUpgradeExperienceIndicators\" & $sWinFU, "RedReason")
 		If @error Then
 			SetError(1, 0, False)
 		Else
@@ -77,7 +77,17 @@ Func _CPUNameCheck($sCPU, $sFamily, $sVersion, $bAppCompat = False)
 	EndIf
 EndFunc   ;==>_CPUNameCheck
 
-Func _CPUCoresCheck($iCores, $iThreads)
+Func _CPUCoresCheck($iCores, $iThreads, $sWinFU = False)
+
+	If $sWinFU Then
+		Local $sReg = RegRead("HKLM64\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\TargetVersionUpgradeExperienceIndicators\" & $sWinFU, "RedReason")
+		If @error Then
+			Return SetError(1, 0, False)
+		Else
+			Return Not StringInStr($sReg, "Cpu")
+		EndIf
+	EndIf
+
 	If $iCores >= 2 Or $iThreads >= 2 Then
 		Return True
 	Else
@@ -85,7 +95,17 @@ Func _CPUCoresCheck($iCores, $iThreads)
 	EndIf
 EndFunc   ;==>_CPUCoresCheck
 
-Func _CPUSpeedCheck()
+Func _CPUSpeedCheck($sWinFU = False)
+
+	If $sWinFU Then
+		Local $sReg = RegRead("HKLM64\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\TargetVersionUpgradeExperienceIndicators\" & $sWinFU, "RedReason")
+		If @error Then
+			Return SetError(1, 0, False)
+		Else
+			Return Not StringInStr($sReg, "Cpu")
+		EndIf
+	EndIf
+
 	Select
 		Case _GetCPUInfo(3) >= 1000
 			Return SetError(0, 0, True)
@@ -203,11 +223,11 @@ Func _InternetCheck()
 	Return _WinAPI_IsInternetConnected()
 EndFunc
 
-Func _MemCheck($bAppCompat = False)
+Func _MemCheck($sWinFU = False)
 	Local Static $vMem
 
-	If $bAppCompat Then
-		Local $sReg = RegRead("HKLM64\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\TargetVersionUpgradeExperienceIndicators\NI22H2", "RedReason")
+	If $sWinFU Then
+		Local $sReg = RegRead("HKLM64\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\TargetVersionUpgradeExperienceIndicators\" & $sWinFU, "RedReason")
 		If @error Then
 			Return SetError(1, 0, False)
 		Else
@@ -238,14 +258,14 @@ Func _MemCheck($bAppCompat = False)
 	EndIf
 EndFunc   ;==>_MemCheck
 
-Func _SecureBootCheck($bAppCompat = False)
+Func _SecureBootCheck($sWinFU = False)
 
-	If $bAppCompat Then
-		Local $sReg = RegRead("HKLM64\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\TargetVersionUpgradeExperienceIndicators\NI22H2", "RedReason")
+	If $sWinFU Then
+		Local $sReg = RegRead("HKLM64\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\TargetVersionUpgradeExperienceIndicators\" & $sWinFU, "RedReason")
 		If @error Then
 			Return SetError(1, 0, False)
 		Else
-			Return Not StringInStr($sReg, "CpuFms")
+			Return Not StringInStr($sReg, "UefiSecureBoot")
 		EndIf
 	EndIf
 
@@ -262,14 +282,14 @@ Func _SecureBootCheck($bAppCompat = False)
 	EndSwitch
 EndFunc   ;==>_SecureBootCheck
 
-Func _SpaceCheck($sDrive = Null, $bAppCompat = False)
+Func _SpaceCheck($sDrive = Null, $sWinFU = False)
 
-	If $bAppCompat Then
-		Local $sReg = RegRead("HKLM64\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\TargetVersionUpgradeExperienceIndicators\NI22H2", "SystemDriveTooFull")
+	If $sWinFU Then
+		Local $sReg = RegRead("HKLM64\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\TargetVersionUpgradeExperienceIndicators\" & $sWinFU, "RedReason")
 		If @error Then
 			Return SetError(1, 0, False)
 		Else
-			Return Not Int($sReg)
+			Return Not StringInStr($sReg, "SystemDriveSize")
 		EndIf
 	EndIf
 
@@ -296,10 +316,10 @@ Func _SpaceCheck($sDrive = Null, $bAppCompat = False)
 	EndIf
 EndFunc   ;==>_SpaceCheck
 
-Func _TPMCheck($bAppCompat = False)
+Func _TPMCheck($sWinFU = False)
 
-	If $bAppCompat Then
-		Local $sReg = RegRead("HKLM64\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\TargetVersionUpgradeExperienceIndicators\NI22H2", "RedReason")
+	If $sWinFU Then
+		Local $sReg = RegRead("HKLM64\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\TargetVersionUpgradeExperienceIndicators\" & $sWinFU, "RedReason")
 		If @error Then
 			Return SetError(1, 0, False)
 		Else
